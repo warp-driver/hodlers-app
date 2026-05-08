@@ -20,3 +20,21 @@ tasks:
     desc: Run hodlers contract unit tests.
     cmds:
       - cargo test --manifest-path contracts/hodlers/Cargo.toml --lib
+
+  build-handler:
+    desc: Build stellar-handler Soroban contract.
+    cmds:
+      - cd contracts/stellar-handler && stellar contract build --optimize
+
+  test-handler:
+    desc: Run stellar-handler contract unit tests.
+    cmds:
+      - cargo test --manifest-path contracts/stellar-handler/Cargo.toml --lib
+
+  build-contracts:
+    desc: Build all Soroban contracts.
+    deps: [build-hodlers, build-handler]
+
+  test-contracts:
+    desc: Run all Soroban contract tests.
+    deps: [test-hodlers, test-handler]

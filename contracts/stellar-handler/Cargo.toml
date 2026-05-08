@@ -1,0 +1,25 @@
+[package]
+name = "stellar-handler"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { version = "26", features = ["alloc"] }
+warpdrive-shared = "0.2.4"
+alloy-sol-types = { version = "1.4.1", default-features = false }
+alloy-primitives = { version = "1.4.1", default-features = false }
+hodlers = { path = "../hodlers" }
+
+[dev-dependencies]
+soroban-sdk = { version = "26", features = ["testutils"] }
+warpdrive-shared = { version = "0.2.4", features = ["testutils"] }
+warpdrive-secp256k1-verification = "0.2.4"
+warpdrive-secp256k1-security = "0.2.4"
+
+[profile.release]
+overflow-checks = true
