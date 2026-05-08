@@ -14,11 +14,8 @@ serde_json = "1.0.145"
 tokio = { version = "1.52" }
 alloy-sol-types = "1.4.1"
 alloy-primitives = { version = "1.4.1", features = ["serde"] }
+wit-bindgen = "0.53.1"
 
-# After `scripts/fetch-wit.sh` populates `../wit-definitions/`, add
-# `wit-bindgen-rt` here and configure `package.metadata.component.target`
-# to point at the cloned WIT world. Until then this crate is a plain
-# `cdylib` placeholder that won't link with the WarpDrive host.
 [package.metadata.component]
 package = "hodlers-app:circuit"
 
