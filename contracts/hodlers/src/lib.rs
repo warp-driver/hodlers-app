@@ -1,5 +1,11 @@
 #![no_std]
 
 mod contract;
+mod error;
+mod storage;
 
-pub use contract::Hodlers;
+#[cfg(test)]
+mod tests;
+
+pub use contract::{Hodlers, HodlersClient};
+pub use error::HodlersError;
