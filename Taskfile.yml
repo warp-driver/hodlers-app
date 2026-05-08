@@ -10,3 +10,13 @@ tasks:
     desc: Build hodlers-circuit as a WASI 0.2 component.
     cmds:
       - cargo component build --release --manifest-path circuit/Cargo.toml
+
+  build-hodlers:
+    desc: Build hodlers Soroban contract.
+    cmds:
+      - cd contracts/hodlers && stellar contract build --optimize
+
+  test-hodlers:
+    desc: Run hodlers contract unit tests.
+    cmds:
+      - cargo test --manifest-path contracts/hodlers/Cargo.toml --lib
