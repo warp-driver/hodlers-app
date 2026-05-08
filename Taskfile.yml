@@ -1,0 +1,12 @@
+version: '3'
+
+tasks:
+  fetch-wit:
+    desc: Fetch warpdrive WIT dependencies into wit-definitions/deps/.
+    cmds:
+      - cd wit-definitions && wkg wit fetch
+
+  build-circuit:
+    desc: Build hodlers-circuit as a WASI 0.2 component.
+    cmds:
+      - cargo component build --release --manifest-path circuit/Cargo.toml
