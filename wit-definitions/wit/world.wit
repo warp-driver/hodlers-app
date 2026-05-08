@@ -1,5 +1,5 @@
 package hodlers-app:circuit;
 
 world circuit-world {
-    include warpdrive:vectr/warpdrive-world@2.10.0;
+    include warpdrive:vectr/warpdrive-world@2.12.0;
 }

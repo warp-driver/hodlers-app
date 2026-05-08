@@ -11,6 +11,11 @@ tasks:
     cmds:
       - cargo component build --release --manifest-path components/circuit/Cargo.toml
 
+  test-circuit:
+    desc: Run hodlers-circuit unit tests.
+    cmds:
+      - cargo test --manifest-path components/circuit/Cargo.toml --lib
+
   build-hodlers:
     desc: Build hodlers Soroban contract.
     cmds:
