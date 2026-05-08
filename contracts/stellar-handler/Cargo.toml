@@ -18,8 +18,8 @@ hodlers = { path = "../hodlers" }
 [dev-dependencies]
 soroban-sdk = { version = "26", features = ["testutils"] }
 warpdrive-shared = { version = "0.2.4", features = ["testutils"] }
-warpdrive-secp256k1-verification = "0.2.4"
-warpdrive-secp256k1-security = "0.2.4"
+secp256k1-verification = { path = "../secp256k1-verification" }
+secp256k1-security = { path = "../secp256k1-security" }
 
 [profile.release]
 overflow-checks = true

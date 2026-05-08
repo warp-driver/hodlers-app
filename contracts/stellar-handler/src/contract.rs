@@ -56,10 +56,7 @@ impl StellarHandler {
             .ok_or(HandlerError::PayloadDecodeFailed)?;
         let trader_strkey = String::from_str(&env, &payload.trader);
         let trader = Address::from_string(&trader_strkey);
-        let delta: i128 = payload
-            .delta
-            .try_into()
-            .map_err(|_| HandlerError::PayloadDecodeFailed)?;
+        let delta: i128 = payload.delta;
 
         let hodlers_addr = storage::get_hodlers_contract(&env);
         HodlersClient::new(&env, &hodlers_addr)
