@@ -1,6 +1,12 @@
-use crate::phoenix::{apply, try_finalize, FieldUpdate, SwapState, XLM_SAC_CONTRACT_ID};
+use crate::phoenix::{
+    apply, decode_field, try_finalize, FieldUpdate, SwapState, XLM_SAC_CONTRACT_ID,
+};
 use crate::HodlersPayload;
 use alloy_sol_types::SolValue;
+use std::str::FromStr;
+use stellar_xdr::curr::{
+    Int128Parts, Limits, ScAddress, ScString, ScVal, StringM, WriteXdr,
+};
 
 #[test]
 fn payload_round_trips() {
@@ -15,15 +21,14 @@ fn payload_round_trips() {
 }
 
 #[test]
-fn finalize_returns_none_until_all_fields_present() {
+fn finalize_buys_xlm_with_positive_delta() {
     let mut s = SwapState::default();
     apply(&mut s, FieldUpdate::Sender("GA...".into()));
-    assert!(try_finalize(&s).is_none());
-    apply(&mut s, FieldUpdate::SellToken("CSOMETHING".into()));
-    assert!(try_finalize(&s).is_none());
+    apply(&mut s, FieldUpdate::SellToken("CUSDC".into()));
     apply(&mut s, FieldUpdate::BuyToken(XLM_SAC_CONTRACT_ID.into()));
+    apply(&mut s, FieldUpdate::OfferAmount(100));
     assert!(try_finalize(&s).is_none());
-    apply(&mut s, FieldUpdate::ActualReceivedAmount(500));
+    apply(&mut s, FieldUpdate::ReturnAmount(500));
     assert_eq!(try_finalize(&s), Some(("GA...".into(), 500)));
 }
 
@@ -44,15 +49,54 @@ fn finalize_returns_none_for_non_xlm_swap() {
     apply(&mut s, FieldUpdate::SellToken("CUSDC".into()));
     apply(&mut s, FieldUpdate::BuyToken("CSOMETHING".into()));
     apply(&mut s, FieldUpdate::OfferAmount(100));
-    apply(&mut s, FieldUpdate::ActualReceivedAmount(99));
+    apply(&mut s, FieldUpdate::ReturnAmount(99));
     assert_eq!(try_finalize(&s), None);
 }
 
+// Recorded mainnet swap: tx cfda8d134eda95d30e7059c1277af9bd4a809496b22ab2ae7857a0e8c1e811e7
+// Trader GB3JC... sold 820_000_000 XLM stroops for 131_802_593 USDC units.
 #[test]
-#[ignore = "fill in once we have a recorded mainnet event base64"]
 fn decode_real_phoenix_event() {
-    // let topic_segments = vec!["AAAAD...".into(), "AAAADwAAAAZzZW5kZXI=".into()];
-    // let value = "AAAAEgAAAAAAAAAA...".into();
-    // let update = crate::phoenix::decode_field(&topic_segments, &value).unwrap();
-    // matches!(update, FieldUpdate::Sender(_));
+    let trader = "GB3JCHJUP6HHZJLN5LKQDRFP2HWSLNXYE2TGWDGBTNXIW6MLVRQXNDBC";
+    let xlm = XLM_SAC_CONTRACT_ID;
+    let usdc = "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75";
+
+    let events = [
+        (string_topic("swap"), string_topic("sender"), addr_value(trader)),
+        (string_topic("swap"), string_topic("sell_token"), addr_value(xlm)),
+        (string_topic("swap"), string_topic("offer_amount"), i128_value(820_000_000)),
+        (string_topic("swap"), string_topic("buy_token"), addr_value(usdc)),
+        (string_topic("swap"), string_topic("return_amount"), i128_value(131_802_593)),
+    ];
+
+    let mut state = SwapState::default();
+    for (t0, t1, v) in &events {
+        let update = decode_field(&[t0.clone(), t1.clone()], v).unwrap();
+        apply(&mut state, update);
+    }
+
+    assert_eq!(
+        try_finalize(&state),
+        Some((trader.to_string(), -820_000_000))
+    );
+}
+
+fn string_topic(s: &str) -> String {
+    let inner: StringM = s.try_into().unwrap();
+    ScVal::String(ScString(inner))
+        .to_xdr_base64(Limits::none())
+        .unwrap()
+}
+
+fn addr_value(strkey: &str) -> String {
+    let addr = ScAddress::from_str(strkey).unwrap();
+    ScVal::Address(addr).to_xdr_base64(Limits::none()).unwrap()
+}
+
+fn i128_value(n: i128) -> String {
+    let hi = (n >> 64) as i64;
+    let lo = n as u64;
+    ScVal::I128(Int128Parts { hi, lo })
+        .to_xdr_base64(Limits::none())
+        .unwrap()
 }

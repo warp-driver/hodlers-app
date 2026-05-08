@@ -2,8 +2,9 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use stellar_xdr::curr::{Limits, ReadXdr, ScSymbol, ScVal};
 
-// XLM Stellar Asset Contract on mainnet (SAC C-address). Fill in.
-pub const XLM_SAC_CONTRACT_ID: &str = "TODO_FILL_IN_XLM_SAC_C_ADDRESS";
+// XLM Stellar Asset Contract on Stellar mainnet (the "native" SAC).
+pub const XLM_SAC_CONTRACT_ID: &str =
+    "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA";
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct SwapState {
@@ -11,7 +12,7 @@ pub struct SwapState {
     pub sell_token: Option<String>,
     pub buy_token: Option<String>,
     pub offer_amount: Option<i128>,
-    pub actual_received_amount: Option<i128>,
+    pub return_amount: Option<i128>,
 }
 
 pub enum FieldUpdate {
@@ -19,7 +20,7 @@ pub enum FieldUpdate {
     SellToken(String),
     BuyToken(String),
     OfferAmount(i128),
-    ActualReceivedAmount(i128),
+    ReturnAmount(i128),
     Other,
 }
 
@@ -41,7 +42,7 @@ pub fn decode_field(topic_segments: &[String], value: &str) -> Result<FieldUpdat
         "sell_token" => FieldUpdate::SellToken(decode_address_strkey(&val)?),
         "buy_token" => FieldUpdate::BuyToken(decode_address_strkey(&val)?),
         "offer_amount" => FieldUpdate::OfferAmount(decode_i128(&val)?),
-        "actual received amount" => FieldUpdate::ActualReceivedAmount(decode_i128(&val)?),
+        "return_amount" => FieldUpdate::ReturnAmount(decode_i128(&val)?),
         _ => FieldUpdate::Other,
     })
 }
@@ -52,7 +53,7 @@ pub fn apply(state: &mut SwapState, update: FieldUpdate) {
         FieldUpdate::SellToken(s) => state.sell_token = Some(s),
         FieldUpdate::BuyToken(s) => state.buy_token = Some(s),
         FieldUpdate::OfferAmount(n) => state.offer_amount = Some(n),
-        FieldUpdate::ActualReceivedAmount(n) => state.actual_received_amount = Some(n),
+        FieldUpdate::ReturnAmount(n) => state.return_amount = Some(n),
         FieldUpdate::Other => {}
     }
 }
@@ -63,7 +64,7 @@ pub fn try_finalize(state: &SwapState) -> Option<(String, i128)> {
     let buy_token = state.buy_token.as_ref()?;
 
     if buy_token == XLM_SAC_CONTRACT_ID {
-        let amount = state.actual_received_amount?;
+        let amount = state.return_amount?;
         Some((sender.clone(), amount))
     } else if sell_token == XLM_SAC_CONTRACT_ID {
         let amount = state.offer_amount?;
