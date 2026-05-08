@@ -7,6 +7,6 @@ name = "warpdrive:vectr"
 registry = "wa.dev"
 
 [[packages.versions]]
-requirement = "=2.10.0"
-version = "2.10.0"
-digest = "sha256:39328cc863d031c3b08eb50f48449e41a4bf973373b746b6ed0e3434ea023f98"
+requirement = "=2.12.0"
+version = "2.12.0"
+digest = "sha256:af5dd94b10dbed46398e4490ed39157a8919b67e890ca8a2076ca4d2ee05cbe8"
