@@ -1,6 +1,6 @@
 wit_bindgen::generate!({
     world: "circuit-world",
-    path: "../wit-definitions/wit",
+    path: "../../wit-definitions/wit",
     generate_all,
 });
 

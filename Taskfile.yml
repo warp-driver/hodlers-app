@@ -9,7 +9,7 @@ tasks:
   build-circuit:
     desc: Build hodlers-circuit as a WASI 0.2 component.
     cmds:
-      - cargo component build --release --manifest-path circuit/Cargo.toml
+      - cargo component build --release --manifest-path components/circuit/Cargo.toml
 
   build-hodlers:
     desc: Build hodlers Soroban contract.
