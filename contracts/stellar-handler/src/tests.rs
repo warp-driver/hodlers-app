@@ -1,8 +1,8 @@
-use alloc::string::ToString;
+use alloc::format;
 use alloc::vec::Vec as StdVec;
 use alloy_sol_types::SolValue;
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{Address, Bytes, BytesN, Env, String as SorobanString, Vec};
+use soroban_sdk::{Address, Bytes, BytesN, Env, Vec};
 use warpdrive_shared::testutils::{
     make_secp256k1_key, secp256k1_pubkey, secp256k1_sign_envelope, SecpSigningKey,
 };
@@ -16,7 +16,6 @@ use crate::{HandlerError, SignatureData, StellarHandler, StellarHandlerClient};
 
 const REGISTRATION_BLOCK: u32 = 10;
 const CURRENT_BLOCK: u32 = 100;
-const TRADER_STRKEY: &str = "GBVKQGCYHIRBFLBNUMBOMFXYS6BEU2NXG5UGQS3VAAY3X4OKJM7AKE54";
 
 struct TestSetup<'a> {
     env: Env,
@@ -25,9 +24,9 @@ struct TestSetup<'a> {
     keys: StdVec<(SecpSigningKey, BytesN<33>)>,
 }
 
-fn build_envelope_bytes(env: &Env, event_id: u8, delta: i128) -> Bytes {
+fn build_envelope_bytes(env: &Env, event_id: u8, trader: &Address, delta: i128) -> Bytes {
     let payload = HodlersPayload {
-        trader: TRADER_STRKEY.to_string(),
+        trader: format!("{}", trader.to_string()),
         delta,
     };
     let payload_bytes = payload.abi_encode();
@@ -91,25 +90,23 @@ fn sign(env: &Env, envelope: &Bytes, keys: &[(SecpSigningKey, BytesN<33>)]) -> S
     }
 }
 
-fn trader_address(env: &Env) -> Address {
-    Address::from_string(&SorobanString::from_str(env, TRADER_STRKEY))
-}
-
 #[test]
 fn happy_path_verifies_and_credits_hodlers() {
     let s = setup(2, 55, 100);
-    let envelope = build_envelope_bytes(&s.env, 1, 42);
+    let trader = Address::generate(&s.env);
+    let envelope = build_envelope_bytes(&s.env, 1, &trader, 42);
     let sig = sign(&s.env, &envelope, &s.keys);
 
     s.handler.verify(&envelope, &sig);
 
-    assert_eq!(s.hodlers.points_of(&trader_address(&s.env)), 42);
+    assert_eq!(s.hodlers.points_of(&trader), 42);
 }
 
 #[test]
 fn replay_is_rejected() {
     let s = setup(2, 55, 100);
-    let envelope = build_envelope_bytes(&s.env, 1, 10);
+    let trader = Address::generate(&s.env);
+    let envelope = build_envelope_bytes(&s.env, 1, &trader, 10);
     let sig = sign(&s.env, &envelope, &s.keys);
 
     s.handler.verify(&envelope, &sig);
@@ -120,7 +117,8 @@ fn replay_is_rejected() {
 #[test]
 fn insufficient_quorum_rejected() {
     let s = setup(2, 55, 100);
-    let envelope = build_envelope_bytes(&s.env, 2, 10);
+    let trader = Address::generate(&s.env);
+    let envelope = build_envelope_bytes(&s.env, 2, &trader, 10);
     // Only one signer when threshold needs both.
     let sig = sign(&s.env, &envelope, &s.keys[..1]);
 
