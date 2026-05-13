@@ -6,12 +6,8 @@ wit_bindgen::generate!({
 
 use anyhow::{anyhow, Context};
 
-use exports::warpdrive::aggregator::aggregator::Guest;
-use warpdrive::aggregator::input::AggregatorInput;
-use warpdrive::aggregator::output::{
-    AggregatorAction, StellarSubmitAction, SubmitAction,
-};
-use warpdrive::types::chain::{AnyTxHash, StellarAddress};
+use warpdrive::aggregator::output::{StellarSubmitAction, SubmitAction};
+use warpdrive::types::chain::StellarAddress;
 
 struct Component;
 
