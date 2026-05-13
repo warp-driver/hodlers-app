@@ -1,5 +1,48 @@
 version: '3'
 
+# Environment variables consumed by deploy tasks (override on the command line
+# or via .env loaded by your shell):
+#
+#   RPC_URL              Stellar Soroban RPC. Default: testnet.
+#   NETWORK_PASSPHRASE   Stellar network passphrase. Default: testnet.
+#   DEPLOYER_SECRET      Stellar S-seed used as `--source` for our own deploys.
+#                        On testnet this is optional (middleware friendbots a key
+#                        and exposes it under out/.keys/ — set this to that
+#                        same secret to reuse it for our hodlers/handler deploys).
+#   PHOENIX_POOL         Soroban C-address of the Phoenix XLM-USDC pool.
+#                        Default: the address recorded with the test swap.
+#   CHAIN                WarpDrive chain key for the trigger and manager.
+#                        Default: stellar:testnet. Use stellar:pubnet for mainnet.
+#   WORKFLOW_ID          Service workflow id. Default: swap.
+#   SIGNER_PUBKEY        secp256k1 operator pubkey (33-byte compressed, hex) to
+#                        register on the security contract. No default.
+#   SIGNER_WEIGHT        Operator weight on the security contract. Default: 100.
+#   THRESHOLD_NUM        Consensus numerator. Default: 1.
+#   THRESHOLD_DEN        Consensus denominator. Default: 1.
+#
+# Artefacts produced under ./out/ (gitignored):
+#
+#   out/deploy.json      Middleware-produced manifest: secp256k1_security,
+#                        secp256k1_verification, ethereum_handler, project_root.
+#   out/hodlers.json     Our hodlers contract address.
+#   out/handler.json     Our stellar-handler contract address.
+#   out/circuit.uri      URI emitted by `warpdrive-cli upload-component`.
+#   out/aggregator.uri   URI emitted by `warpdrive-cli upload-component`.
+
+vars:
+  RPC_URL: '{{.RPC_URL | default "https://soroban-testnet.stellar.org"}}'
+  NETWORK_PASSPHRASE: '{{.NETWORK_PASSPHRASE | default "Test SDF Network ; September 2015"}}'
+  PHOENIX_POOL: '{{.PHOENIX_POOL | default "CBHCRSVX3ZZ7EGTSYMKPEFGZNWRVCSESQR3UABET4MIW52N4EVU6BIZX"}}'
+  CHAIN: '{{.CHAIN | default "stellar:testnet"}}'
+  WORKFLOW_ID: '{{.WORKFLOW_ID | default "swap"}}'
+  SIGNER_WEIGHT: '{{.SIGNER_WEIGHT | default "100"}}'
+  THRESHOLD_NUM: '{{.THRESHOLD_NUM | default "1"}}'
+  THRESHOLD_DEN: '{{.THRESHOLD_DEN | default "1"}}'
+  MIDDLEWARE_IMAGE: '{{.MIDDLEWARE_IMAGE | default "ghcr.io/warp-driver/warpdrive-stellar-middleware:latest"}}'
+  CIRCUIT_WASM: components/circuit/target/wasm32-wasip1/release/hodlers_circuit.wasm
+  AGGREGATOR_WASM: components/aggregator/target/wasm32-wasip1/release/hodlers_aggregator.wasm
+  SERVICE_FILE: '{{.SERVICE_FILE | default "service/service.json"}}'
+
 tasks:
   fetch-wit:
     desc: Fetch warpdrive WIT dependencies into wit-definitions/deps/.
@@ -53,3 +96,193 @@ tasks:
   test-contracts:
     desc: Run all Soroban contract tests.
     deps: [test-hodlers, test-handler]
+
+  build-service:
+    desc: |
+      Build service.json declaratively via warpdrive-cli. Requires
+      out/handler.json (from `task deploy-handler`) and uploaded component
+      URIs at out/circuit.uri and out/aggregator.uri. Set PHOENIX_POOL +
+      CHAIN env vars to override defaults.
+    deps: [build-circuit]
+    cmds:
+      - mkdir -p service
+      - rm -f {{.SERVICE_FILE}}
+      - |
+        set -euo pipefail
+        HANDLER=$(jq -r .stellar_handler out/handler.json)
+        CIRCUIT_URI=$(cat out/circuit.uri)
+        AGG_URI=$(cat out/aggregator.uri)
+        warpdrive-cli service -f {{.SERVICE_FILE}} init --name hodlers
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow add --id {{.WORKFLOW_ID}}
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow trigger \
+            --id {{.WORKFLOW_ID}} set-stellar \
+            --contract-id {{.PHOENIX_POOL}} \
+            --chain {{.CHAIN}} \
+            --topic string:swap \
+            --topic wildcard
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow component \
+            --id {{.WORKFLOW_ID}} set-source-uri --uri "$CIRCUIT_URI"
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow submit \
+            --id {{.WORKFLOW_ID}} set-aggregator
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow submit \
+            --id {{.WORKFLOW_ID}} component set-source-uri --uri "$AGG_URI"
+        warpdrive-cli service -f {{.SERVICE_FILE}} manager set-stellar \
+            --chain {{.CHAIN}} --address "$HANDLER"
+
+  upload-component:
+    desc: Upload the circuit wasm via warpdrive-cli; writes URI to out/circuit.uri.
+    deps: [build-circuit]
+    cmds:
+      - mkdir -p out
+      - warpdrive-cli upload-component {{.CIRCUIT_WASM}} | tee out/circuit.upload.log
+      - |
+        grep -Eo '(ipfs://[A-Za-z0-9]+|https?://\S+|registry://\S+)' out/circuit.upload.log \
+          | tail -n 1 > out/circuit.uri
+        test -s out/circuit.uri || { echo "no URI captured from upload-component output"; exit 1; }
+
+  upload-aggregator:
+    desc: Upload the simple_aggregator wasm; writes URI to out/aggregator.uri.
+    cmds:
+      - mkdir -p out
+      - warpdrive-cli upload-component {{.AGGREGATOR_WASM}} | tee out/aggregator.upload.log
+      - |
+        grep -Eo '(ipfs://[A-Za-z0-9]+|https?://\S+|registry://\S+)' out/aggregator.upload.log \
+          | tail -n 1 > out/aggregator.uri
+        test -s out/aggregator.uri || { echo "no URI captured from upload-component output"; exit 1; }
+
+  deploy-middleware:
+    desc: |
+      Deploy secp256k1 pipeline + project-root via warpdrive-stellar-middleware.
+      Writes out/deploy.json. On testnet the container friendbots a deployer
+      key on first run and persists it under out/.keys/.
+    cmds:
+      - mkdir -p out out/.keys
+      - |
+        docker run --rm \
+          --pull=always \
+          -e RPC_URL="{{.RPC_URL}}" \
+          -e NETWORK_PASSPHRASE="{{.NETWORK_PASSPHRASE}}" \
+          {{if .DEPLOYER_SECRET}}-e DEPLOYER_SECRET="{{.DEPLOYER_SECRET}}"{{end}} \
+          {{if .DEPLOYER_ADDRESS}}-e DEPLOYER_ADDRESS="{{.DEPLOYER_ADDRESS}}"{{end}} \
+          -v "$PWD/out:/out" \
+          -v "$PWD/out/.keys:/root/.config/soroban" \
+          {{.MIDDLEWARE_IMAGE}} \
+          /warpdrive/cli.sh deploy --output-path /out/deploy.json --variant ethereum
+
+  deploy-hodlers:
+    desc: Deploy the hodlers contract. Writes out/hodlers.json.
+    deps: [build-hodlers]
+    cmds:
+      - mkdir -p out
+      - |
+        set -euo pipefail
+        SOURCE_ARG="--source ${DEPLOYER_SECRET:-warpdrive-deployer}"
+        HODLERS_ADDR=$(stellar contract deploy \
+            --wasm contracts/hodlers/target/wasm32v1-none/release/hodlers.optimized.wasm \
+            --rpc-url "{{.RPC_URL}}" \
+            --network-passphrase "{{.NETWORK_PASSPHRASE}}" \
+            $SOURCE_ARG)
+        echo "{\"hodlers\":\"$HODLERS_ADDR\"}" | jq . > out/hodlers.json
+        cat out/hodlers.json
+
+  deploy-handler:
+    desc: |
+      Deploy stellar-handler. Reads verification contract from out/deploy.json
+      and hodlers contract from out/hodlers.json. Writes out/handler.json.
+    deps: [build-handler]
+    cmds:
+      - mkdir -p out
+      - |
+        set -euo pipefail
+        SOURCE_ARG="--source ${DEPLOYER_SECRET:-warpdrive-deployer}"
+        VERIFICATION=$(jq -r .contracts.secp256k1_verification out/deploy.json)
+        HODLERS=$(jq -r .hodlers out/hodlers.json)
+        HANDLER_ADDR=$(stellar contract deploy \
+            --wasm contracts/stellar-handler/target/wasm32v1-none/release/stellar_handler.optimized.wasm \
+            --rpc-url "{{.RPC_URL}}" \
+            --network-passphrase "{{.NETWORK_PASSPHRASE}}" \
+            $SOURCE_ARG \
+            -- \
+            --verification_contract "$VERIFICATION" \
+            --hodlers_contract "$HODLERS")
+        echo "{\"stellar_handler\":\"$HANDLER_ADDR\"}" | jq . > out/handler.json
+        cat out/handler.json
+
+  register-signer:
+    desc: |
+      Register a secp256k1 signer (operator pubkey) on the security contract
+      and set the consensus threshold. Requires SIGNER_PUBKEY env var.
+    cmds:
+      - |
+        set -euo pipefail
+        test -n "${SIGNER_PUBKEY:-}" || { echo "SIGNER_PUBKEY env var required"; exit 1; }
+        docker run --rm \
+          --pull=always \
+          -e RPC_URL="{{.RPC_URL}}" \
+          -e NETWORK_PASSPHRASE="{{.NETWORK_PASSPHRASE}}" \
+          {{if .DEPLOYER_SECRET}}-e DEPLOYER_SECRET="{{.DEPLOYER_SECRET}}"{{end}} \
+          {{if .DEPLOYER_ADDRESS}}-e DEPLOYER_ADDRESS="{{.DEPLOYER_ADDRESS}}"{{end}} \
+          -v "$PWD/out:/out" \
+          -v "$PWD/out/.keys:/root/.config/soroban" \
+          {{.MIDDLEWARE_IMAGE}} \
+          /warpdrive/cli.sh add-signer \
+            --scheme secp256k1 \
+            --key "$SIGNER_PUBKEY" \
+            --weight {{.SIGNER_WEIGHT}} \
+            --deploy-file /out/deploy.json
+        docker run --rm \
+          --pull=always \
+          -e RPC_URL="{{.RPC_URL}}" \
+          -e NETWORK_PASSPHRASE="{{.NETWORK_PASSPHRASE}}" \
+          {{if .DEPLOYER_SECRET}}-e DEPLOYER_SECRET="{{.DEPLOYER_SECRET}}"{{end}} \
+          {{if .DEPLOYER_ADDRESS}}-e DEPLOYER_ADDRESS="{{.DEPLOYER_ADDRESS}}"{{end}} \
+          -v "$PWD/out:/out" \
+          -v "$PWD/out/.keys:/root/.config/soroban" \
+          {{.MIDDLEWARE_IMAGE}} \
+          /warpdrive/cli.sh set-threshold \
+            --scheme secp256k1 \
+            --numerator {{.THRESHOLD_NUM}} \
+            --denominator {{.THRESHOLD_DEN}} \
+            --deploy-file /out/deploy.json
+
+  set-service-spec:
+    desc: |
+      Point the on-chain project-root at the deployed service.json. Requires
+      SERVICE_URI env var (e.g. ipfs://... after you've pinned service.json).
+    cmds:
+      - |
+        set -euo pipefail
+        test -n "${SERVICE_URI:-}" || { echo "SERVICE_URI env var required"; exit 1; }
+        docker run --rm \
+          --pull=always \
+          -e RPC_URL="{{.RPC_URL}}" \
+          -e NETWORK_PASSPHRASE="{{.NETWORK_PASSPHRASE}}" \
+          {{if .DEPLOYER_SECRET}}-e DEPLOYER_SECRET="{{.DEPLOYER_SECRET}}"{{end}} \
+          {{if .DEPLOYER_ADDRESS}}-e DEPLOYER_ADDRESS="{{.DEPLOYER_ADDRESS}}"{{end}} \
+          -v "$PWD/out:/out" \
+          -v "$PWD/out/.keys:/root/.config/soroban" \
+          {{.MIDDLEWARE_IMAGE}} \
+          /warpdrive/cli.sh set-project-spec-repo \
+            --repo "$SERVICE_URI" \
+            --deploy-file /out/deploy.json
+
+  deploy-contracts:
+    desc: Deploy all on-chain contracts (middleware + hodlers + handler).
+    cmds:
+      - task: deploy-middleware
+      - task: deploy-hodlers
+      - task: deploy-handler
+
+  deploy:
+    desc: |
+      Full deploy: build everything, deploy contracts, upload components, emit
+      service.json. After this you still need to (a) pin service.json and run
+      `task set-service-spec SERVICE_URI=...`, and (b) start a warpdrive node
+      with SIGNER_PUBKEY registered via `task register-signer`.
+    cmds:
+      - task: build-contracts
+      - task: build-circuit
+      - task: deploy-contracts
+      - task: upload-component
+      - task: upload-aggregator
+      - task: build-service
