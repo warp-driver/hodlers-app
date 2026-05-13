@@ -11,8 +11,10 @@ version: '3'
 #                        same secret to reuse it for our hodlers/handler deploys).
 #   PHOENIX_POOL         Soroban C-address of the Phoenix XLM-USDC pool.
 #                        Default: the address recorded with the test swap.
-#   CHAIN                WarpDrive chain key for the trigger and manager.
-#                        Default: stellar:testnet. Use stellar:pubnet for mainnet.
+#   TRIGGER_CHAIN        WarpDrive chain key the circuit watches for events.
+#                        Default: stellar:pubnet (real Phoenix lives only on mainnet).
+#   MANAGER_CHAIN        WarpDrive chain key the handler is deployed on.
+#                        Default: stellar:testnet (matches the RPC defaults above).
 #   WORKFLOW_ID          Service workflow id. Default: swap.
 #   SIGNER_PUBKEY        secp256k1 operator pubkey (33-byte compressed, hex) to
 #                        register on the security contract. No default.
@@ -33,7 +35,8 @@ vars:
   RPC_URL: '{{.RPC_URL | default "https://soroban-testnet.stellar.org"}}'
   NETWORK_PASSPHRASE: '{{.NETWORK_PASSPHRASE | default "Test SDF Network ; September 2015"}}'
   PHOENIX_POOL: '{{.PHOENIX_POOL | default "CBHCRSVX3ZZ7EGTSYMKPEFGZNWRVCSESQR3UABET4MIW52N4EVU6BIZX"}}'
-  CHAIN: '{{.CHAIN | default "stellar:testnet"}}'
+  TRIGGER_CHAIN: '{{.TRIGGER_CHAIN | default "stellar:pubnet"}}'
+  MANAGER_CHAIN: '{{.MANAGER_CHAIN | default "stellar:testnet"}}'
   WORKFLOW_ID: '{{.WORKFLOW_ID | default "swap"}}'
   SIGNER_WEIGHT: '{{.SIGNER_WEIGHT | default "100"}}'
   THRESHOLD_NUM: '{{.THRESHOLD_NUM | default "1"}}'
@@ -122,7 +125,7 @@ tasks:
         warpdrive-cli service -f {{.SERVICE_FILE}} workflow trigger \
             --id {{.WORKFLOW_ID}} set-stellar \
             --contract-id {{.PHOENIX_POOL}} \
-            --chain {{.CHAIN}} \
+            --chain {{.TRIGGER_CHAIN}} \
             --topic string:swap \
             --topic wildcard
         warpdrive-cli service -f {{.SERVICE_FILE}} workflow component \
@@ -132,7 +135,7 @@ tasks:
         warpdrive-cli service -f {{.SERVICE_FILE}} workflow submit \
             --id {{.WORKFLOW_ID}} component set-source-uri --uri "$AGG_URI"
         warpdrive-cli service -f {{.SERVICE_FILE}} manager set-stellar \
-            --chain {{.CHAIN}} --address "$HANDLER"
+            --chain {{.MANAGER_CHAIN}} --address "$HANDLER"
 
   upload-component:
     desc: Upload the circuit wasm via warpdrive-cli; writes URI to out/circuit.uri.
