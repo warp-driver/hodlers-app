@@ -54,6 +54,11 @@ tasks:
     cmds:
       - cargo component build --release --manifest-path components/circuit/Cargo.toml
 
+  build-aggregator:
+    desc: Build hodlers-aggregator as a WASI 0.2 component.
+    cmds:
+      - cargo component build --release --manifest-path components/aggregator/Cargo.toml
+
   test-circuit:
     desc: Run hodlers-circuit unit tests.
     cmds:
@@ -141,7 +146,8 @@ tasks:
         test -s out/circuit.uri || { echo "no URI captured from upload-component output"; exit 1; }
 
   upload-aggregator:
-    desc: Upload the simple_aggregator wasm; writes URI to out/aggregator.uri.
+    desc: Upload the hodlers-aggregator wasm; writes URI to out/aggregator.uri.
+    deps: [build-aggregator]
     cmds:
       - mkdir -p out
       - warpdrive-cli upload-component {{.AGGREGATOR_WASM}} | tee out/aggregator.upload.log
@@ -282,6 +288,7 @@ tasks:
     cmds:
       - task: build-contracts
       - task: build-circuit
+      - task: build-aggregator
       - task: deploy-contracts
       - task: upload-component
       - task: upload-aggregator
