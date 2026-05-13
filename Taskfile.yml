@@ -64,6 +64,11 @@ tasks:
     cmds:
       - cargo component build --release --manifest-path components/circuit/Cargo.toml
 
+  build-aggregator:
+    desc: Build hodlers-aggregator as a WASI 0.2 component.
+    cmds:
+      - cargo component build --release --manifest-path components/aggregator/Cargo.toml
+
   test-circuit:
     desc: Run hodlers-circuit unit tests.
     cmds:
