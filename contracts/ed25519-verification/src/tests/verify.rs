@@ -2,7 +2,7 @@ extern crate std;
 
 use crate::{Ed25519Verification, Ed25519VerificationClient, VerifyError};
 use soroban_sdk::{Bytes, BytesN, Env, Vec, testutils::Address as _, testutils::Ledger as _};
-use warpdrive_ed25519_security::{Ed25519Security, Ed25519SecurityClient};
+use ed25519_security::{Ed25519Security, Ed25519SecurityClient};
 use warpdrive_shared::testutils::{
     Ed25519PubKey, Ed25519SigningKey, ed25519_pubkey, ed25519_sign_envelope, make_ed25519_key,
 };
