@@ -1,18 +1,16 @@
 extern crate std;
 
-use warpdrive_shared::interfaces::CompressedSecpPubKey;
+use warpdrive_shared::interfaces::Ed25519PubKey;
 
 use super::setup::deploy_contract;
 use soroban_sdk::{
     Address, Env, IntoVal, Vec,
     testutils::{Address as _, MockAuth, MockAuthInvoke},
 };
-use warpdrive_shared::testutils::{make_secp256k1_key, secp256k1_pubkey};
+use warpdrive_shared::testutils::{ed25519_pubkey, make_ed25519_key};
 
-// ── T-11: Use valid compressed pubkeys ──────────────────────────────
-
-fn make_signer(env: &Env, seed: u8) -> CompressedSecpPubKey {
-    secp256k1_pubkey(env, &make_secp256k1_key(seed))
+fn make_signer(env: &Env, seed: u8) -> Ed25519PubKey {
+    ed25519_pubkey(env, &make_ed25519_key(seed))
 }
 
 #[test]
@@ -129,7 +127,7 @@ fn test_assert_admin_auth() {
     assert_eq!(client.get_total_weight(), weight);
 }
 
-// ── T-9: Removing a non-existent signer is a no-op ─────────────────
+// ── Removing a non-existent signer is a no-op ──────────────────────
 
 #[test]
 fn test_remove_nonexistent_signer_is_noop() {
@@ -150,7 +148,7 @@ fn test_remove_nonexistent_signer_is_noop() {
     assert_eq!(client.list_signers().len(), 1);
 }
 
-// ── T-10: Admin auth on remove_signer ───────────────────────────────
+// ── Admin auth on remove_signer ─────────────────────────────────────
 
 #[test]
 fn test_remove_signer_requires_admin() {

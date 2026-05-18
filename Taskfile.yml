@@ -1,5 +1,58 @@
 version: '3'
 
+# Environment variables consumed by deploy tasks (export in your shell or via .env):
+#
+#   DEPLOYER_SECRET                 Stellar S-seed used as `--source` for host
+#                                   `stellar contract deploy` AND as BYOK secret for the
+#                                   middleware container. Bootstrap:
+#                                     stellar keys generate hodlers-deployer --fund --network testnet
+#                                     export DEPLOYER_SECRET=$(stellar keys show hodlers-deployer)
+#                                     export DEPLOYER_ADDRESS=$(stellar keys address hodlers-deployer)
+#   DEPLOYER_ADDRESS                G-address matching DEPLOYER_SECRET. Required by middleware.
+#   WARPDRIVE_SIGNING_MNEMONIC      BIP39 mnemonic the node HD-derives the operator's
+#                                   ed25519 signing key from. MUST be BIP39 — a raw
+#                                   hex secret won't satisfy non-zero HD indices.
+#                                   Bootstrap:
+#                                     stellar keys generate warpdrive-operator
+#                                     export WARPDRIVE_SIGNING_MNEMONIC="$(stellar keys show warpdrive-operator --phrase)"
+#   RPC_URL                         Stellar Soroban RPC. Default: testnet.
+#   NETWORK_PASSPHRASE              Stellar network passphrase. Default: testnet.
+#   PHOENIX_POOL                    Soroban C-address of the Phoenix XLM-USDC pool.
+#                                   Default: the address recorded with the test swap.
+#   TRIGGER_CHAIN                   WarpDrive chain key the circuit watches.
+#                                   Default: stellar:pubnet (real Phoenix lives on mainnet).
+#   MANAGER_CHAIN                   WarpDrive chain key the handler is deployed on.
+#                                   Default: stellar:testnet.
+#   WORKFLOW_ID                     Service workflow id. Default: swap.
+#   SIGNER_WEIGHT                   Operator weight on the security contract. Default: 100.
+#   THRESHOLD_NUM/DEN               Consensus threshold fraction. Default: 1/1.
+#
+# Artefacts produced under ./out/ (gitignored):
+#
+#   out/deploy.json        Middleware-produced manifest: ed25519_security,
+#                          ed25519_verification, project_root.
+#   out/hodlers.json       Hodlers contract address.
+#   out/handler.json       Stellar-handler contract address.
+#   out/circuit.digest     Content-address digest of the uploaded circuit component.
+#   out/aggregator.digest  Content-address digest of the uploaded aggregator component.
+#   out/service.hash       Hash returned by POST /dev/services after registering service.json.
+#   out/signer.json        Raw SignerResponse from POST /services/signer.
+
+vars:
+  RPC_URL: '{{.RPC_URL | default "https://soroban-testnet.stellar.org"}}'
+  NETWORK_PASSPHRASE: '{{.NETWORK_PASSPHRASE | default "Test SDF Network ; September 2015"}}'
+  PHOENIX_POOL: '{{.PHOENIX_POOL | default "CBHCRSVX3ZZ7EGTSYMKPEFGZNWRVCSESQR3UABET4MIW52N4EVU6BIZX"}}'
+  TRIGGER_CHAIN: '{{.TRIGGER_CHAIN | default "stellar:pubnet"}}'
+  MANAGER_CHAIN: '{{.MANAGER_CHAIN | default "stellar:testnet"}}'
+  WORKFLOW_ID: '{{.WORKFLOW_ID | default "swap"}}'
+  SIGNER_WEIGHT: '{{.SIGNER_WEIGHT | default "100"}}'
+  THRESHOLD_NUM: '{{.THRESHOLD_NUM | default "1"}}'
+  THRESHOLD_DEN: '{{.THRESHOLD_DEN | default "1"}}'
+  MIDDLEWARE_IMAGE: '{{.MIDDLEWARE_IMAGE | default "ghcr.io/warp-driver/warpdrive-stellar-middleware:latest"}}'
+  CIRCUIT_WASM: components/circuit/target/wasm32-wasip1/release/hodlers_circuit.wasm
+  AGGREGATOR_WASM: components/aggregator/target/wasm32-wasip1/release/hodlers_aggregator.wasm
+  SERVICE_FILE: '{{.SERVICE_FILE | default "service/service.json"}}'
+
 tasks:
   fetch-wit:
     desc: Fetch warpdrive WIT dependencies into wit-definitions/deps/.
@@ -37,14 +90,14 @@ tasks:
       - cargo test --manifest-path contracts/stellar-handler/Cargo.toml --lib
 
   build-security:
-    desc: Build secp256k1-security Soroban contract.
+    desc: Build ed25519-security Soroban contract.
     cmds:
-      - cd contracts/secp256k1-security && stellar contract build --optimize
+      - cd contracts/ed25519-security && stellar contract build --optimize
 
   build-verification:
-    desc: Build secp256k1-verification Soroban contract.
+    desc: Build ed25519-verification Soroban contract.
     cmds:
-      - cd contracts/secp256k1-verification && stellar contract build --optimize
+      - cd contracts/ed25519-verification && stellar contract build --optimize
 
   build-contracts:
     desc: Build all Soroban contracts.
@@ -53,3 +106,253 @@ tasks:
   test-contracts:
     desc: Run all Soroban contract tests.
     deps: [test-hodlers, test-handler]
+
+  build-service:
+    desc: |
+      Build service.json declaratively via warpdrive-cli. Requires
+      out/handler.json (from `task deploy-handler`) and uploaded component
+      digests at out/circuit.digest and out/aggregator.digest.
+    deps: [build-circuit]
+    cmds:
+      - mkdir -p service
+      - rm -f {{.SERVICE_FILE}}
+      - |
+        set -euo pipefail
+        HANDLER=$(jq -r .stellar_handler out/handler.json)
+        PROJECT_ROOT=$(jq -r .contracts.project_root out/deploy.json)
+        CIRCUIT_DIGEST=$(cat out/circuit.digest)
+        AGG_DIGEST=$(cat out/aggregator.digest)
+        warpdrive-cli service -f {{.SERVICE_FILE}} init --name hodlers
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow add --id {{.WORKFLOW_ID}}
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow trigger \
+            --id {{.WORKFLOW_ID}} set-stellar \
+            --contract-id {{.PHOENIX_POOL}} \
+            --chain {{.TRIGGER_CHAIN}} \
+            --topic string:swap \
+            --topic wildcard
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow component \
+            --id {{.WORKFLOW_ID}} set-source-digest --digest "$CIRCUIT_DIGEST"
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow submit \
+            --id {{.WORKFLOW_ID}} set-aggregator
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow submit \
+            --id {{.WORKFLOW_ID}} component set-source-digest --digest "$AGG_DIGEST"
+        warpdrive-cli service -f {{.SERVICE_FILE}} workflow submit \
+            --id {{.WORKFLOW_ID}} component config \
+            --values "chain={{.MANAGER_CHAIN}}" \
+            --values "service_handler=$HANDLER"
+        warpdrive-cli service -f {{.SERVICE_FILE}} manager set-stellar \
+            --chain {{.MANAGER_CHAIN}} --address "$PROJECT_ROOT"
+        tmp=$(mktemp)
+        jq '. + {signature_kind: {algorithm: "ed25519", prefix: "sep53"}}' \
+            {{.SERVICE_FILE}} > "$tmp" && mv "$tmp" {{.SERVICE_FILE}}
+
+  upload-component:
+    desc: Upload the circuit wasm to the local warpdrive node; writes digest to out/circuit.digest.
+    deps: [build-circuit]
+    cmds:
+      - mkdir -p out
+      - warpdrive-cli upload-component {{.CIRCUIT_WASM}} 2>&1 | tee out/circuit.upload.log
+      - |
+        grep -Eo '^[a-f0-9]{64}$' out/circuit.upload.log | tail -n 1 > out/circuit.digest
+        test -s out/circuit.digest || { echo "no digest captured from upload-component output"; exit 1; }
+
+  upload-aggregator:
+    desc: Upload the hodlers-aggregator wasm to the local warpdrive node; writes digest to out/aggregator.digest.
+    deps: [build-aggregator]
+    cmds:
+      - mkdir -p out
+      - warpdrive-cli upload-component {{.AGGREGATOR_WASM}} 2>&1 | tee out/aggregator.upload.log
+      - |
+        grep -Eo '^[a-f0-9]{64}$' out/aggregator.upload.log | tail -n 1 > out/aggregator.digest
+        test -s out/aggregator.digest || { echo "no digest captured from upload-component output"; exit 1; }
+
+  deploy-middleware:
+    desc: |
+      Deploy ed25519 pipeline + project-root via warpdrive-stellar-middleware
+      using your DEPLOYER_SECRET (BYOK). Writes out/deploy.json.
+    cmds:
+      - mkdir -p out
+      - |
+        set -euo pipefail
+        : "${DEPLOYER_SECRET:?DEPLOYER_SECRET is required}"
+        : "${DEPLOYER_ADDRESS:?DEPLOYER_ADDRESS is required}"
+        docker run --rm \
+          --pull=always \
+          --user "$(id -u):$(id -g)" \
+          -e HOME=/tmp \
+          -e RPC_URL="{{.RPC_URL}}" \
+          -e NETWORK_PASSPHRASE="{{.NETWORK_PASSPHRASE}}" \
+          -e DEPLOYER_SECRET="$DEPLOYER_SECRET" \
+          -e DEPLOYER_ADDRESS="$DEPLOYER_ADDRESS" \
+          -v "$PWD/out:/out" \
+          {{.MIDDLEWARE_IMAGE}} \
+          /warpdrive/cli.sh deploy --output-path /out/deploy.json --variant stellar
+
+  deploy-hodlers:
+    desc: Deploy the hodlers contract using DEPLOYER_SECRET. Writes out/hodlers.json.
+    deps: [build-hodlers]
+    cmds:
+      - mkdir -p out
+      - |
+        set -euo pipefail
+        : "${DEPLOYER_SECRET:?DEPLOYER_SECRET is required}"
+        HODLERS_ADDR=$(stellar contract deploy \
+            --wasm contracts/hodlers/target/wasm32v1-none/release/hodlers.wasm \
+            --rpc-url "{{.RPC_URL}}" \
+            --network-passphrase "{{.NETWORK_PASSPHRASE}}" \
+            --source "$DEPLOYER_SECRET")
+        echo "{\"hodlers\":\"$HODLERS_ADDR\"}" | jq . > out/hodlers.json
+        cat out/hodlers.json
+
+  deploy-handler:
+    desc: |
+      Deploy stellar-handler using DEPLOYER_SECRET. Reads verification contract
+      from out/deploy.json and hodlers contract from out/hodlers.json. Writes
+      out/handler.json.
+    deps: [build-handler]
+    cmds:
+      - mkdir -p out
+      - |
+        set -euo pipefail
+        : "${DEPLOYER_SECRET:?DEPLOYER_SECRET is required}"
+        VERIFICATION=$(jq -r .contracts.ed25519_verification out/deploy.json)
+        HODLERS=$(jq -r .hodlers out/hodlers.json)
+        HANDLER_ADDR=$(stellar contract deploy \
+            --wasm contracts/stellar-handler/target/wasm32v1-none/release/stellar_handler.wasm \
+            --rpc-url "{{.RPC_URL}}" \
+            --network-passphrase "{{.NETWORK_PASSPHRASE}}" \
+            --source "$DEPLOYER_SECRET" \
+            -- \
+            --verification_contract "$VERIFICATION" \
+            --hodlers_contract "$HODLERS")
+        echo "{\"stellar_handler\":\"$HANDLER_ADDR\"}" | jq . > out/handler.json
+        cat out/handler.json
+
+  run-node:
+    desc: |
+      Run a single-operator warpdrive node locally using the warpdrive.toml in
+      this repo. Requires WARPDRIVE_SIGNING_MNEMONIC (BIP39 — see Taskfile
+      header for how to generate) and DEPLOYER_SECRET (the testnet ed25519
+      S-seed, reused as the Stellar aggregator credential). Long-lived; run
+      in its own terminal.
+    cmds:
+      - mkdir -p out/node-data
+      - |
+        set -euo pipefail
+        : "${WARPDRIVE_SIGNING_MNEMONIC:?WARPDRIVE_SIGNING_MNEMONIC is required}"
+        : "${DEPLOYER_SECRET:?DEPLOYER_SECRET is required (used as WARPDRIVE_AGGREGATOR_STELLAR_CREDENTIAL)}"
+        WARPDRIVE_HOME="$PWD" \
+        WARPDRIVE_DATA="$PWD/out/node-data" \
+        WARPDRIVE_AGGREGATOR_STELLAR_CREDENTIAL="${WARPDRIVE_AGGREGATOR_STELLAR_CREDENTIAL:-$DEPLOYER_SECRET}" \
+        warpdrive
+
+  fetch-signer:
+    desc: |
+      Ask the running warpdrive node for the operator's ed25519 pubkey for
+      this service (the service must already be registered via
+      `task register-service`). Writes the full SignerResponse to
+      out/signer.json and the 32-byte ed25519 pubkey to out/signer.pubkey.
+    cmds:
+      - mkdir -p out
+      - |
+        set -euo pipefail
+        MANAGER=$(jq -c '{service_manager: .manager}' {{.SERVICE_FILE}})
+        curl -sSf -X POST http://127.0.0.1:8000/services/signer \
+            -H "Content-Type: application/json" \
+            --data "$MANAGER" > out/signer.json
+        jq -r .ed25519.ed25519_pubkey out/signer.json > out/signer.pubkey
+        test -s out/signer.pubkey || { echo "no pubkey in signer response"; cat out/signer.json; exit 1; }
+        echo "operator pubkey: $(cat out/signer.pubkey)"
+
+  register-signer:
+    desc: |
+      Register the operator's ed25519 pubkey on the on-chain security
+      contract and set the consensus threshold. Auto-fetches the pubkey from
+      the running node (`fetch-signer`) unless out/signer.pubkey already exists.
+    cmds:
+      - test -s out/signer.pubkey || task fetch-signer
+      - |
+        set -euo pipefail
+        : "${DEPLOYER_SECRET:?DEPLOYER_SECRET is required}"
+        : "${DEPLOYER_ADDRESS:?DEPLOYER_ADDRESS is required}"
+        SIGNER_PUBKEY=$(cat out/signer.pubkey)
+        docker run --rm \
+          --pull=always \
+          --user "$(id -u):$(id -g)" \
+          -e HOME=/tmp \
+          -e RPC_URL="{{.RPC_URL}}" \
+          -e NETWORK_PASSPHRASE="{{.NETWORK_PASSPHRASE}}" \
+          -e DEPLOYER_SECRET="$DEPLOYER_SECRET" \
+          -e DEPLOYER_ADDRESS="$DEPLOYER_ADDRESS" \
+          -v "$PWD/out:/out" \
+          {{.MIDDLEWARE_IMAGE}} \
+          /warpdrive/cli.sh add-signer \
+            --scheme ed25519 \
+            --key "$SIGNER_PUBKEY" \
+            --weight {{.SIGNER_WEIGHT}} \
+            --deploy-file /out/deploy.json
+        docker run --rm \
+          --pull=always \
+          --user "$(id -u):$(id -g)" \
+          -e HOME=/tmp \
+          -e RPC_URL="{{.RPC_URL}}" \
+          -e NETWORK_PASSPHRASE="{{.NETWORK_PASSPHRASE}}" \
+          -e DEPLOYER_SECRET="$DEPLOYER_SECRET" \
+          -e DEPLOYER_ADDRESS="$DEPLOYER_ADDRESS" \
+          -v "$PWD/out:/out" \
+          {{.MIDDLEWARE_IMAGE}} \
+          /warpdrive/cli.sh set-threshold \
+            --scheme ed25519 \
+            --numerator {{.THRESHOLD_NUM}} \
+            --denominator {{.THRESHOLD_DEN}} \
+            --deploy-file /out/deploy.json
+
+  deploy-contracts:
+    desc: Deploy all on-chain contracts (middleware + hodlers + handler).
+    cmds:
+      - task: deploy-middleware
+      - task: deploy-hodlers
+      - task: deploy-handler
+
+  deploy:
+    desc: |
+      Phase 1 (no node required): build everything + deploy on-chain contracts.
+      After this completes, start the node (`task run-node` in another terminal),
+      then run `task wire-service` to upload components and assemble service.json.
+    cmds:
+      - task: build-contracts
+      - task: build-circuit
+      - task: build-aggregator
+      - task: deploy-contracts
+
+  wire-service:
+    desc: |
+      Phase 2 (requires `task run-node` running in another terminal): upload
+      both wasms to the node, assemble service/service.json, then register
+      the service with the local node via its /dev/services endpoints
+      (bypassing IPFS pinning). After this, run `task register-signer`.
+    cmds:
+      - task: upload-component
+      - task: upload-aggregator
+      - task: build-service
+      - task: register-service
+
+  register-service:
+    desc: |
+      Register service/service.json with the local warpdrive node via
+      /dev/services. Saves the service hash to out/service.hash and
+      activates the service in the dispatcher.
+    cmds:
+      - mkdir -p out
+      - |
+        set -euo pipefail
+        HASH=$(curl -sS -X POST http://127.0.0.1:8000/dev/services \
+            -H "Content-Type: application/json" \
+            --data @{{.SERVICE_FILE}} | jq -r .hash)
+        test -n "$HASH" && test "$HASH" != "null" \
+            || { echo "no hash returned from /dev/services"; exit 1; }
+        echo "$HASH" > out/service.hash
+        echo "service hash: $HASH"
+        curl -sSf -X POST "http://127.0.0.1:8000/dev/services/$HASH" \
+            -o /dev/null
+        echo "service registered with dispatcher"

@@ -11,15 +11,13 @@ doctest = false
 [dependencies]
 soroban-sdk = { version = "26", features = ["alloc"] }
 warpdrive-shared = "0.2.4"
-alloy-sol-types = { version = "1.4.1", default-features = false }
-alloy-primitives = { version = "1.4.1", default-features = false }
 hodlers = { path = "../hodlers" }
 
 [dev-dependencies]
 soroban-sdk = { version = "26", features = ["testutils"] }
 warpdrive-shared = { version = "0.2.4", features = ["testutils"] }
-secp256k1-verification = { path = "../secp256k1-verification" }
-secp256k1-security = { path = "../secp256k1-security" }
+ed25519-verification = { path = "../ed25519-verification" }
+ed25519-security = { path = "../ed25519-security" }
 
 [profile.release]
 overflow-checks = true

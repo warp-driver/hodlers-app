@@ -1,5 +1,5 @@
 [package]
-name = "secp256k1-verification"
+name = "ed25519-verification"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -14,7 +14,7 @@ warpdrive-shared = "0.2.4"
 [dev-dependencies]
 soroban-sdk = { version = "26", features = ["testutils"] }
 warpdrive-shared = { version = "0.2.4", features = ["testutils"] }
-secp256k1-security = { path = "../secp256k1-security" }
+ed25519-security = { path = "../ed25519-security" }
 
 [profile.release]
 overflow-checks = true

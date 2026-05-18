@@ -1,19 +1,19 @@
 use soroban_sdk::{
-    contract, contractimpl, contracttype, Address, Bytes, BytesN, Env, String, Vec,
+    contract, contractimpl, contracttype, xdr::FromXdr, Address, Bytes, BytesN, Env, String,
 };
-use warpdrive_shared::interfaces::verification::Secp256k1VerificationClient;
+use warpdrive_shared::interfaces::{
+    handler::{Ed25519SignatureData, HandlerError, Verified, XlmEnvelope},
+    verification::Ed25519VerificationClient,
+};
 
 use hodlers::HodlersClient;
 
-use crate::envelope::{Envelope, HodlersPayload};
-use crate::error::HandlerError;
 use crate::storage;
 
 #[contracttype]
-pub struct SignatureData {
-    pub signatures: Vec<BytesN<65>>,
-    pub signers: Vec<BytesN<33>>,
-    pub reference_block: u32,
+pub struct HodlersPayload {
+    pub delta: i128,
+    pub trader: String,
 }
 
 #[contract]
@@ -28,45 +28,45 @@ impl StellarHandler {
         storage::extend_instance_ttl(&env);
     }
 
-    pub fn verify(
+    pub fn verify_xlm(
         env: Env,
         envelope_bytes: Bytes,
-        sig_data: SignatureData,
+        sig_data: Ed25519SignatureData,
     ) -> Result<(), HandlerError> {
-        let envelope = Envelope::abi_decode_from(&envelope_bytes)
-            .ok_or(HandlerError::EnvelopeDecodeFailed)?;
-        let event_id = BytesN::<20>::from_array(&env, &envelope.eventId.0);
+        let envelope = XlmEnvelope::from_xdr(&env, &envelope_bytes)
+            .map_err(|_| HandlerError::InvalidEnvelope)?;
+        let event_id = envelope.event_id.clone();
 
         if storage::is_event_seen(&env, &event_id) {
             return Err(HandlerError::EventAlreadySeen);
         }
 
         let verification_addr = storage::get_verification_contract(&env);
-        Secp256k1VerificationClient::new(&env, &verification_addr)
-            .try_verify(
-                &envelope_bytes,
-                &sig_data.signatures,
-                &sig_data.signers,
-                &sig_data.reference_block,
-            )
-            .map_err(|_| HandlerError::VerificationFailed)?
-            .map_err(|_| HandlerError::VerificationFailed)?;
+        match Ed25519VerificationClient::new(&env, &verification_addr).try_verify(
+            &envelope_bytes,
+            &sig_data.signatures,
+            &sig_data.signers,
+            &sig_data.reference_block,
+        ) {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) => return Err(HandlerError::UnknownVerificationError),
+            Err(Ok(e)) => return Err(HandlerError::from(e)),
+            Err(Err(_)) => return Err(HandlerError::OtherInvocationError),
+        }
 
-        let payload = HodlersPayload::abi_decode_from(&envelope.payload)
-            .ok_or(HandlerError::PayloadDecodeFailed)?;
-        let trader_strkey = String::from_str(&env, &payload.trader);
-        let trader = Address::from_string(&trader_strkey);
-        let delta: i128 = payload.delta;
+        let payload = HodlersPayload::from_xdr(&env, &envelope.payload)
+            .map_err(|_| HandlerError::InvalidEnvelope)?;
+        let trader = Address::from_string(&payload.trader);
 
         let hodlers_addr = storage::get_hodlers_contract(&env);
         HodlersClient::new(&env, &hodlers_addr)
-            .try_add_points(&trader, &delta)
-            .map_err(|_| HandlerError::HodlersCallFailed)?
-            .map_err(|_| HandlerError::HodlersCallFailed)?;
+            .try_add_points(&trader, &payload.delta)
+            .map_err(|_| HandlerError::OtherInvocationError)?
+            .map_err(|_| HandlerError::OtherInvocationError)?;
 
         storage::mark_event_seen(&env, &event_id);
         storage::extend_instance_ttl(&env);
-
+        Verified::new(event_id).publish(&env);
         Ok(())
     }
 
@@ -76,5 +76,9 @@ impl StellarHandler {
 
     pub fn hodlers_contract(env: Env) -> Address {
         storage::get_hodlers_contract(&env)
+    }
+
+    pub fn payload(_env: Env, _event_id: BytesN<20>) -> Option<Bytes> {
+        None
     }
 }

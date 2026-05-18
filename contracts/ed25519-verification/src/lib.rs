@@ -4,8 +4,8 @@ mod contract;
 pub mod storage;
 pub mod utils;
 
-pub use contract::Secp256k1Verification;
-pub use contract::Secp256k1VerificationClient;
+pub use contract::Ed25519Verification;
+pub use contract::Ed25519VerificationClient;
 pub use warpdrive_shared::VerifyError;
 
 #[cfg(test)]

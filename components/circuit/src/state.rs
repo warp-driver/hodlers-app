@@ -1,30 +1,41 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use crate::phoenix::SwapState;
+use crate::wasi::keyvalue::atomics;
+use crate::wasi::keyvalue::store;
 
 const BUCKET: &str = "hodlers-circuit-swap-state";
 
-pub fn load(key: &str) -> Result<SwapState> {
+/// Atomically read the current SwapState for `key`, apply `mutate`, and commit
+/// the result via wasi:keyvalue/atomics CAS. Retries on CAS conflict so that
+/// concurrent invocations (8 events per Phoenix swap fire in parallel) compose
+/// without losing field updates.
+///
+/// Returns the post-mutation state so the caller can decide whether to finalize.
+pub fn update_with<F, R>(key: &str, mut mutate: F) -> Result<R>
+where
+    F: FnMut(&mut SwapState) -> R,
+{
     let bucket = open_bucket()?;
-    match bucket.get(&key.to_string()).context("kv get")? {
-        Some(bytes) => serde_json::from_slice(&bytes).context("deserialize SwapState"),
-        None => Ok(SwapState::default()),
+    loop {
+        let cas = atomics::Cas::new(&bucket, &key.to_string())
+            .map_err(|e| anyhow!("cas open: {e:?}"))?;
+        let mut state = match cas.current().map_err(|e| anyhow!("cas current: {e:?}"))? {
+            Some(bytes) => serde_json::from_slice(&bytes).context("deserialize SwapState")?,
+            None => SwapState::default(),
+        };
+        let result = mutate(&mut state);
+        let bytes = serde_json::to_vec(&state).context("serialize SwapState")?;
+        match atomics::swap(cas, &bytes) {
+            Ok(()) => return Ok(result),
+            Err(atomics::CasError::CasFailed(_)) => continue,
+            Err(atomics::CasError::StoreError(e)) => {
+                return Err(anyhow!("cas swap store error: {e:?}"))
+            }
+        }
     }
 }
 
-pub fn save(key: &str, state: &SwapState) -> Result<()> {
-    let bucket = open_bucket()?;
-    let bytes = serde_json::to_vec(state).context("serialize SwapState")?;
-    bucket.set(&key.to_string(), &bytes).context("kv set")?;
-    Ok(())
-}
-
-pub fn delete(key: &str) -> Result<()> {
-    let bucket = open_bucket()?;
-    bucket.delete(&key.to_string()).context("kv delete")?;
-    Ok(())
-}
-
-fn open_bucket() -> Result<crate::wasi::keyvalue::store::Bucket> {
-    crate::wasi::keyvalue::store::open(&BUCKET.to_string()).context("open kv bucket")
+fn open_bucket() -> Result<store::Bucket> {
+    store::open(&BUCKET.to_string()).map_err(|e| anyhow!("open kv bucket: {e:?}"))
 }
