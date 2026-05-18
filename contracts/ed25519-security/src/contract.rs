@@ -2,8 +2,8 @@ use soroban_sdk::{Address, BytesN, Env, String, Vec, contract, contractimpl};
 
 use warpdrive_shared::interfaces::{
     security::{
-        Secp256k1SecurityInterface, SecurityError, SignerAdded, SignerInfo, SignerRemoved,
-        ThresholdSet,
+        Ed25519SecurityInterface, Ed25519SignerAdded, Ed25519SignerInfo, Ed25519SignerRemoved,
+        SecurityError, ThresholdSet,
     },
     warpdrive::{ContractUpgraded, WarpDriveInterface},
 };
@@ -11,10 +11,10 @@ use warpdrive_shared::interfaces::{
 use crate::storage::{self, Threshold};
 
 #[contract]
-pub struct Secp256k1Security;
+pub struct Ed25519Security;
 
 #[contractimpl]
-impl Secp256k1Security {
+impl Ed25519Security {
     pub fn __constructor(
         env: Env,
         admin: Address,
@@ -42,7 +42,7 @@ impl Secp256k1Security {
 }
 
 #[contractimpl]
-impl WarpDriveInterface for Secp256k1Security {
+impl WarpDriveInterface for Ed25519Security {
     fn upgrade(env: Env, new_wasm_hash: BytesN<32>, new_version: String) {
         storage::get_admin(&env).require_auth();
 
@@ -75,23 +75,23 @@ impl WarpDriveInterface for Secp256k1Security {
 }
 
 #[contractimpl]
-impl Secp256k1SecurityInterface for Secp256k1Security {
-    fn add_signer(env: Env, key: BytesN<33>, weight: u64) -> Result<(), SecurityError> {
+impl Ed25519SecurityInterface for Ed25519Security {
+    fn add_signer(env: Env, key: BytesN<32>, weight: u64) -> Result<(), SecurityError> {
         storage::get_admin(&env).require_auth();
         if weight == 0 {
             return Err(SecurityError::ZeroWeight);
         }
         storage::extend_instance_ttl(&env);
         storage::add_signer(&env, key.clone(), weight);
-        SignerAdded::new(key, weight).publish(&env);
+        Ed25519SignerAdded::new(key, weight).publish(&env);
         Ok(())
     }
 
-    fn remove_signer(env: Env, key: BytesN<33>) {
+    fn remove_signer(env: Env, key: BytesN<32>) {
         storage::get_admin(&env).require_auth();
         storage::extend_instance_ttl(&env);
         storage::remove_signer(&env, key.clone());
-        SignerRemoved::new(key).publish(&env);
+        Ed25519SignerRemoved::new(key).publish(&env);
     }
 
     fn set_threshold(env: Env, numerator: u64, denominator: u64) -> Result<(), SecurityError> {
@@ -114,19 +114,19 @@ impl Secp256k1SecurityInterface for Secp256k1Security {
         storage::get_total_weight(&env)
     }
 
-    fn get_signer_weight(env: Env, key: BytesN<33>) -> u64 {
+    fn get_signer_weight(env: Env, key: BytesN<32>) -> u64 {
         storage::get_signer_weight(&env, key).unwrap_or(0)
     }
 
-    fn get_signer_weight_at(env: Env, key: BytesN<33>, reference_block: u32) -> u64 {
+    fn get_signer_weight_at(env: Env, key: BytesN<32>, reference_block: u32) -> u64 {
         storage::get_signer_weight_at(&env, key, reference_block)
     }
 
-    fn get_signer_weights(env: Env, keys: Vec<BytesN<33>>) -> Vec<u64> {
+    fn get_signer_weights(env: Env, keys: Vec<BytesN<32>>) -> Vec<u64> {
         storage::get_signer_weights(&env, &keys)
     }
 
-    fn get_signer_weights_at(env: Env, keys: Vec<BytesN<33>>, reference_block: u32) -> Vec<u64> {
+    fn get_signer_weights_at(env: Env, keys: Vec<BytesN<32>>, reference_block: u32) -> Vec<u64> {
         storage::get_signer_weights_at(&env, &keys, reference_block)
     }
 
@@ -140,7 +140,7 @@ impl Secp256k1SecurityInterface for Secp256k1Security {
         ((total as u128) * (threshold.numerator as u128) / (threshold.denominator as u128)) as u64
     }
 
-    fn list_signers(env: Env) -> Vec<SignerInfo> {
+    fn list_signers(env: Env) -> Vec<Ed25519SignerInfo> {
         storage::list_signers(&env)
     }
 
