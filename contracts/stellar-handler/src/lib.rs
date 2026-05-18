@@ -1,13 +1,7 @@
 #![no_std]
-extern crate alloc;
 
 mod contract;
-mod envelope;
-mod error;
 mod storage;
 
-#[cfg(test)]
-mod tests;
-
-pub use contract::{SignatureData, StellarHandler, StellarHandlerClient};
-pub use error::HandlerError;
+pub use contract::{HodlersPayload, StellarHandler, StellarHandlerClient};
+pub use warpdrive_shared::interfaces::handler::{Ed25519SignatureData, HandlerError};
