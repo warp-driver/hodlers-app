@@ -8,7 +8,7 @@ log_level = ["info", "warpdrive=debug"]
 
 [default.chains.stellar.pubnet]
 chain_poll_interval_ms = 5000
-rpc_url = "https://soroban.stellar.org:443"
+rpc_url = "https://mainnet.sorobanrpc.com"
 network_passphrase = "Public Global Stellar Network ; September 2015"
 
 [default.chains.stellar.testnet]
@@ -24,3 +24,14 @@ ipfs_gateway = "https://ipfs.io/ipfs/"
 p2p = "disabled"
 
 [cli]
+
+[cli.chains.stellar.pubnet]
+chain_poll_interval_ms = 5000
+rpc_url = "https://mainnet.sorobanrpc.com"
+network_passphrase = "Public Global Stellar Network ; September 2015"
+
+[cli.chains.stellar.testnet]
+chain_poll_interval_ms = 5000
+rpc_url = "https://soroban-testnet.stellar.org"
+network_passphrase = "Test SDF Network ; September 2015"
+friendbot_url = "https://friendbot-testnet.stellar.org/"
