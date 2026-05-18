@@ -7,8 +7,7 @@ use soroban_sdk::{
     Address, Env, Vec,
     testutils::{Address as _, MockAuth, MockAuthInvoke},
 };
-
-// ── T-1: set_threshold tests ────────────────────────────────────────
+use warpdrive_shared::testutils::{ed25519_pubkey, make_ed25519_key};
 
 #[test]
 fn test_set_threshold_success() {
@@ -67,8 +66,8 @@ fn test_set_threshold_affects_required_weight() {
 
     let (client, _admin) = deploy_contract(&env);
 
-    let key = warpdrive_shared::testutils::make_secp256k1_key(1);
-    let pk = warpdrive_shared::testutils::secp256k1_pubkey(&env, &key);
+    let key = make_ed25519_key(1);
+    let pk = ed25519_pubkey(&env, &key);
 
     client.add_signer(&pk, &300);
     // threshold is 2/3 → required = 300 * 2 / 3 = 200
@@ -78,8 +77,6 @@ fn test_set_threshold_affects_required_weight() {
     client.set_threshold(&1, &2);
     assert_eq!(client.required_weight(), 150);
 }
-
-// ── T-10: Admin auth on set_threshold ───────────────────────────────
 
 #[test]
 fn test_set_threshold_requires_admin() {
@@ -102,8 +99,6 @@ fn test_set_threshold_requires_admin() {
     assert!(result.is_err());
 }
 
-// ── T-4: threshold getters ──────────────────────────────────────────
-
 #[test]
 fn test_threshold_getters_match_constructor() {
     let env = Env::default();
@@ -114,8 +109,6 @@ fn test_threshold_getters_match_constructor() {
     assert_eq!(client.threshold_denominator(), 3);
 }
 
-// ── Zero weight validation ──────────────────────────────────────────
-
 #[test]
 fn test_add_signer_zero_weight_rejected() {
     let env = Env::default();
@@ -123,8 +116,8 @@ fn test_add_signer_zero_weight_rejected() {
 
     let (client, _admin) = deploy_contract(&env);
 
-    let key = warpdrive_shared::testutils::make_secp256k1_key(1);
-    let pk = warpdrive_shared::testutils::secp256k1_pubkey(&env, &key);
+    let key = make_ed25519_key(1);
+    let pk = ed25519_pubkey(&env, &key);
 
     let result = client.try_add_signer(&pk, &0);
     assert_eq!(result, Err(Ok(SecurityError::ZeroWeight)));

@@ -2,11 +2,9 @@ extern crate std;
 
 use super::setup::deploy_contract;
 use soroban_sdk::{Env, Vec, testutils::Ledger as _};
-use warpdrive_shared::testutils::{make_secp256k1_key, secp256k1_pubkey};
+use warpdrive_shared::testutils::{ed25519_pubkey, make_ed25519_key};
 
-type PubKey = soroban_sdk::BytesN<33>;
-
-// Direct historical query tests
+type PubKey = soroban_sdk::BytesN<32>;
 
 #[test]
 fn test_weight_at_before_any_checkpoint() {
@@ -17,8 +15,8 @@ fn test_weight_at_before_any_checkpoint() {
 
     let (client, _admin) = deploy_contract(&env);
 
-    let key = make_secp256k1_key(1);
-    let pk = secp256k1_pubkey(&env, &key);
+    let key = make_ed25519_key(1);
+    let pk = ed25519_pubkey(&env, &key);
     client.add_signer(&pk, &50);
 
     // Query before the signer was added
@@ -35,8 +33,8 @@ fn test_weight_at_exact_checkpoint() {
 
     let (client, _admin) = deploy_contract(&env);
 
-    let key = make_secp256k1_key(1);
-    let pk = secp256k1_pubkey(&env, &key);
+    let key = make_ed25519_key(1);
+    let pk = ed25519_pubkey(&env, &key);
     client.add_signer(&pk, &50);
 
     assert_eq!(client.get_signer_weight_at(&pk, &100), 50);
@@ -51,8 +49,8 @@ fn test_weight_at_between_checkpoints() {
     env.ledger().with_mut(|li| li.sequence_number = 100);
     let (client, _admin) = deploy_contract(&env);
 
-    let key = make_secp256k1_key(1);
-    let pk = secp256k1_pubkey(&env, &key);
+    let key = make_ed25519_key(1);
+    let pk = ed25519_pubkey(&env, &key);
     client.add_signer(&pk, &50);
 
     env.ledger().with_mut(|li| li.sequence_number = 200);
@@ -75,8 +73,8 @@ fn test_weight_at_after_removal() {
     env.ledger().with_mut(|li| li.sequence_number = 100);
     let (client, _admin) = deploy_contract(&env);
 
-    let key = make_secp256k1_key(1);
-    let pk = secp256k1_pubkey(&env, &key);
+    let key = make_ed25519_key(1);
+    let pk = ed25519_pubkey(&env, &key);
     client.add_signer(&pk, &50);
 
     env.ledger().with_mut(|li| li.sequence_number = 200);
@@ -98,10 +96,10 @@ fn test_batch_weights_at() {
     env.ledger().with_mut(|li| li.sequence_number = 100);
     let (client, _admin) = deploy_contract(&env);
 
-    let key1 = make_secp256k1_key(1);
-    let key2 = make_secp256k1_key(2);
-    let pk1 = secp256k1_pubkey(&env, &key1);
-    let pk2 = secp256k1_pubkey(&env, &key2);
+    let key1 = make_ed25519_key(1);
+    let key2 = make_ed25519_key(2);
+    let pk1 = ed25519_pubkey(&env, &key1);
+    let pk2 = ed25519_pubkey(&env, &key2);
 
     client.add_signer(&pk1, &30);
     client.add_signer(&pk2, &70);
@@ -132,12 +130,12 @@ fn test_batch_weights_current() {
 
     let (client, _admin) = deploy_contract(&env);
 
-    let key1 = make_secp256k1_key(1);
-    let key2 = make_secp256k1_key(2);
-    let key3 = make_secp256k1_key(3);
-    let pk1 = secp256k1_pubkey(&env, &key1);
-    let pk2 = secp256k1_pubkey(&env, &key2);
-    let pk3 = secp256k1_pubkey(&env, &key3);
+    let key1 = make_ed25519_key(1);
+    let key2 = make_ed25519_key(2);
+    let key3 = make_ed25519_key(3);
+    let pk1 = ed25519_pubkey(&env, &key1);
+    let pk2 = ed25519_pubkey(&env, &key2);
+    let pk3 = ed25519_pubkey(&env, &key3);
 
     client.add_signer(&pk1, &30);
     client.add_signer(&pk2, &70);
