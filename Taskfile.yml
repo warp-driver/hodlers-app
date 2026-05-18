@@ -271,42 +271,6 @@ tasks:
 
   register-signer:
     desc: |
-      Run a single-operator warpdrive node locally using the warpdrive.toml in
-      this repo. Requires WARPDRIVE_SIGNING_MNEMONIC (BIP39 — see Taskfile
-      header for how to generate) and DEPLOYER_SECRET (the testnet ed25519
-      S-seed, reused as the Stellar aggregator credential). Long-lived; run
-      in its own terminal.
-    cmds:
-      - mkdir -p out/node-data
-      - |
-        set -euo pipefail
-        : "${WARPDRIVE_SIGNING_MNEMONIC:?WARPDRIVE_SIGNING_MNEMONIC is required}"
-        : "${DEPLOYER_SECRET:?DEPLOYER_SECRET is required (used as WARPDRIVE_AGGREGATOR_STELLAR_CREDENTIAL)}"
-        WARPDRIVE_HOME="$PWD" \
-        WARPDRIVE_DATA="$PWD/out/node-data" \
-        WARPDRIVE_AGGREGATOR_STELLAR_CREDENTIAL="${WARPDRIVE_AGGREGATOR_STELLAR_CREDENTIAL:-$DEPLOYER_SECRET}" \
-        warpdrive
-
-  fetch-signer:
-    desc: |
-      Ask the running warpdrive node for the operator's ed25519 pubkey for
-      this service (the service must already be registered via
-      `task register-service`). Writes the full SignerResponse to
-      out/signer.json and the 32-byte ed25519 pubkey to out/signer.pubkey.
-    cmds:
-      - mkdir -p out
-      - |
-        set -euo pipefail
-        MANAGER=$(jq -c '{service_manager: .manager}' {{.SERVICE_FILE}})
-        curl -sSf -X POST http://127.0.0.1:8000/services/signer \
-            -H "Content-Type: application/json" \
-            --data "$MANAGER" > out/signer.json
-        jq -r .ed25519.ed25519_pubkey out/signer.json > out/signer.pubkey
-        test -s out/signer.pubkey || { echo "no pubkey in signer response"; cat out/signer.json; exit 1; }
-        echo "operator pubkey: $(cat out/signer.pubkey)"
-
-  register-signer:
-    desc: |
       Register the operator's ed25519 pubkey on the on-chain security
       contract and set the consensus threshold. Auto-fetches the pubkey from
       the running node (`fetch-signer`) unless out/signer.pubkey already exists.
