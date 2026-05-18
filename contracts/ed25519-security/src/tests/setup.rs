@@ -3,7 +3,7 @@ use soroban_sdk::{Address, BytesN, Env, testutils::Address as _};
 
 mod contract_wasm {
     soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/warpdrive_ed25519_security.wasm"
+        file = "../../target/wasm32v1-none/release/ed25519_security.wasm"
     );
 }
 

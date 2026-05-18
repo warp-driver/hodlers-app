@@ -1,10 +1,10 @@
 use crate::{Ed25519Verification, Ed25519VerificationClient};
 use soroban_sdk::{Address, BytesN, Env, testutils::Address as _};
-use warpdrive_ed25519_security::Ed25519Security;
+use ed25519_security::Ed25519Security;
 
 mod contract_wasm {
     soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/warpdrive_ed25519_verification.wasm"
+        file = "../../target/wasm32v1-none/release/ed25519_verification.wasm"
     );
 }
 
