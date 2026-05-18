@@ -1,3 +1,4 @@
+mod payload;
 mod phoenix;
 mod state;
 
@@ -10,15 +11,7 @@ wit_bindgen::generate!({
     generate_all,
 });
 
-use alloy_sol_types::{sol, SolValue};
 use warpdrive::vectr::input::TriggerData;
-
-sol! {
-    struct HodlersPayload {
-        string trader;
-        int128 delta;
-    }
-}
 
 struct Component;
 
@@ -41,20 +34,31 @@ fn run_inner(trigger_action: TriggerAction) -> anyhow::Result<Vec<WasmResponse>>
     );
 
     let update = phoenix::decode_field(&event.topic_segments, &event.value)?;
-    let mut current = state::load(&key)?;
-    phoenix::apply(&mut current, update);
 
-    if let Some((trader, delta)) = phoenix::try_finalize(&current) {
-        state::delete(&key)?;
-        let payload = HodlersPayload { trader, delta }.abi_encode();
+    // CAS-update the accumulator. Returns the (trader, delta) payload only
+    // if THIS invocation is the one that completed the SwapState and flipped
+    // `finalized` true — wasi:keyvalue/atomics makes the read-modify-write
+    // safe under the 8 concurrent events that fire per Phoenix swap.
+    let to_emit = state::update_with(&key, |s| {
+        phoenix::apply(s, update.clone());
+        if !s.finalized {
+            if let Some(payload) = phoenix::try_finalize(s) {
+                s.finalized = true;
+                return Some(payload);
+            }
+        }
+        None
+    })?;
+
+    if let Some((trader, delta)) = to_emit {
+        let bytes = payload::encode(&trader, delta)?;
         return Ok(vec![WasmResponse {
-            payload,
+            payload: bytes,
             ordering: None,
             event_id_salt: None,
         }]);
     }
 
-    state::save(&key, &current)?;
     Ok(vec![])
 }
 

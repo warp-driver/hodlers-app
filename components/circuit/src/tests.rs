@@ -1,23 +1,46 @@
+use crate::payload;
 use crate::phoenix::{
     apply, decode_field, try_finalize, FieldUpdate, SwapState, XLM_SAC_CONTRACT_ID,
 };
-use crate::HodlersPayload;
-use alloy_sol_types::SolValue;
 use std::str::FromStr;
 use stellar_xdr::curr::{
-    Int128Parts, Limits, ScAddress, ScString, ScVal, StringM, WriteXdr,
+    Int128Parts, Limits, ReadXdr, ScAddress, ScString, ScSymbol, ScVal, StringM, WriteXdr,
 };
 
 #[test]
-fn payload_round_trips() {
-    let original = HodlersPayload {
-        trader: "GAFRT3TQNZH2DVKMSAERPA5QDDXBLMSF6VRDOOEX4CYVXSXNW6YGBLGM".to_string(),
-        delta: -1_234_567,
+fn payload_encodes_as_scmap_with_alphabetical_entries() {
+    let trader = "GAFRT3TQNZH2DVKMSAERPA5QDDXBLMSF6VRDOOEX4CYVXSXNW6YGBLGM";
+    let delta: i128 = -1_234_567;
+    let bytes = payload::encode(trader, delta).unwrap();
+
+    let decoded = ScVal::from_xdr(&bytes, Limits::none()).unwrap();
+    let entries = match decoded {
+        ScVal::Map(Some(m)) => m.0.to_vec(),
+        other => panic!("expected ScMap, got {other:?}"),
     };
-    let encoded = original.abi_encode();
-    let decoded = HodlersPayload::abi_decode(&encoded).unwrap();
-    assert_eq!(decoded.trader, original.trader);
-    assert_eq!(decoded.delta, original.delta);
+    assert_eq!(entries.len(), 2);
+
+    // Soroban contracttype serializes map entries sorted by symbol key —
+    // alphabetically: "delta" before "trader".
+    let delta_sym = ScSymbol("delta".try_into().unwrap());
+    let trader_sym = ScSymbol("trader".try_into().unwrap());
+    assert_eq!(entries[0].key, ScVal::Symbol(delta_sym));
+    assert_eq!(entries[1].key, ScVal::Symbol(trader_sym));
+
+    match &entries[0].val {
+        ScVal::I128(Int128Parts { hi, lo }) => {
+            let recombined = ((*hi as i128) << 64) | (*lo as u128 as i128);
+            assert_eq!(recombined, delta);
+        }
+        other => panic!("expected I128, got {other:?}"),
+    }
+
+    match &entries[1].val {
+        ScVal::String(ScString(s)) => {
+            assert_eq!(std::str::from_utf8(s.as_slice()).unwrap(), trader);
+        }
+        other => panic!("expected String, got {other:?}"),
+    }
 }
 
 #[test]

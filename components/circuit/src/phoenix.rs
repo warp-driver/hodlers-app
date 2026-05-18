@@ -13,8 +13,15 @@ pub struct SwapState {
     pub buy_token: Option<String>,
     pub offer_amount: Option<i128>,
     pub return_amount: Option<i128>,
+    // Set true the first time the state becomes finalizable AND the calling
+    // event wins the CAS race to flip the flag. Subsequent events arriving on
+    // the same accumulator key (same tx_hash:op_index) see this tombstone
+    // and skip emitting, so we get exactly-once delivery per swap.
+    #[serde(default)]
+    pub finalized: bool,
 }
 
+#[derive(Clone)]
 pub enum FieldUpdate {
     Sender(String),
     SellToken(String),
