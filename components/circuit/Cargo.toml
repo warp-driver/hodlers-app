@@ -11,8 +11,6 @@ crate-type = ["cdylib"]
 anyhow = "1.0.100"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
-alloy-sol-types = "1.4.1"
-alloy-primitives = { version = "1.4.1", features = ["serde"] }
 stellar-xdr = { version = "26.0.0", features = ["serde", "serde_json", "base64"] }
 wit-bindgen = "0.53.1"
 
