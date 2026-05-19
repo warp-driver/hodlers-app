@@ -9,3 +9,4 @@ mod tests;
 
 pub use contract::{Hodlers, HodlersClient};
 pub use error::HodlersError;
+pub use storage::TraderPoints;

@@ -11,3 +11,4 @@ test_snapshots/
 # Local secrets / per-deploy contract addresses.
 .env
 .env.local
+out/
