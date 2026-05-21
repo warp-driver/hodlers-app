@@ -21,7 +21,7 @@ Linux with a recent glibc. The following tools must be on `PATH`:
 | Tool                    | Why                                                                                              |
 | ----------------------- | ------------------------------------------------------------------------------------------------ |
 | `curl`, `jq`, `python3` | Shell / build / IPC                                                                              |
-| `docker`                | Runs the [`warpdrive-stellar-middleware`](https://github.com/warp-driver/warpdrive-stellar-middleware) container                                       |
+| `docker`                | Runs the [`warpdrive-stellar-middleware`](https://github.com/warp-driver/warpdrive-contracts/tree/main/docker/middleware) container                  |
 | Rust 1.95 (via rustup)  | Pinned by `rust-toolchain.toml`; required for component + contract builds                        |
 | `task` (go-task)        | Runs `Taskfile.yml` targets                                                                      |
 | `wkg`                   | Fetches the WIT deps for the WASI components                                                     |
