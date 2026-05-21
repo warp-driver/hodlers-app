@@ -12,8 +12,8 @@ testnet. Anyone can read the ledger or independently verify the signatures.
 
 This is a tech-demo submission showcasing that
 [WarpDrive](https://github.com/warp-driver/warpdrive) can drive a real,
-Stellar-native, BFT-quorum-attested workflow end-to-end on testnet — from
-mainnet event ingestion to on-chain settlement — without any centralised
+Stellar-native, BFT-quorum-attested workflow end-to-end on testnet - from
+mainnet event ingestion to on-chain settlement - without any centralised
 operator or off-chain indexer.
 
 ## What this demo proves
@@ -22,7 +22,7 @@ operator or off-chain indexer.
   circuit watches a real Phoenix XLM-USDC pool and reacts to every swap.
 - **A WASI 0.2 circuit produces quorum-attested output that a Soroban contract
   can verify on-chain.** The handler uses the standard
-  `Ed25519VerificationInterface` from `warpdrive-shared` — no bespoke crypto
+  `Ed25519VerificationInterface` from `warpdrive-shared` - no bespoke crypto
   in the demo path.
 - **The whole flow is open and uncoordinated.** Every operator independently
   watches mainnet, aggregates signatures over libp2p, and any of them may
@@ -41,7 +41,7 @@ WarpDrive trigger pipeline  (one Guest::run per event, per operator)
    │
    ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ components/circuit  — WASI 0.2                               │
+│ components/circuit  - WASI 0.2                               │
 │   • decodes one event field per invocation (phoenix.rs)       │
 │   • accumulates SwapState in wasi:keyvalue with CAS retry    │
 │     (state.rs) → exactly-once delivery despite 8 concurrent  │
@@ -55,7 +55,7 @@ WarpDrive aggregator  (per-operator; ed25519 / SEP-53 quorum over libp2p)
    │
    ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ components/aggregator — WASI 0.2                             │
+│ components/aggregator - WASI 0.2                             │
 │   • emits a single Stellar SubmitAction pointing at the      │
 │     stellar-handler contract                                  │
 └──────────────────────────────────────────────────────────────┘
@@ -76,10 +76,10 @@ WarpDrive aggregator  (per-operator; ed25519 / SEP-53 quorum over libp2p)
    ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ contracts/hodlers  (Soroban, testnet)                        │
-│   add_points(trader, delta) — open call; trust guarantee is  │
+│   add_points(trader, delta) - open call; trust guarantee is  │
 │     upstream (only the handler can produce envelopes that    │
 │     verify against the quorum)                                │
-│   points_of(trader), all_points() — public queries           │
+│   points_of(trader), all_points() - public queries           │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -91,13 +91,13 @@ WarpDrive aggregator  (per-operator; ed25519 / SEP-53 quorum over libp2p)
 |---|---|---|
 | `hodlers/` | Points ledger | `add_points(trader, delta) -> Result<i128>`, `points_of(trader) -> i128`, `all_points() -> Vec<TraderPoints>` |
 | `stellar-handler/` | WarpDrive handler entry point | `verify_xlm(envelope_bytes: Bytes, sig_data: Ed25519SignatureData) -> Result<(), HandlerError>` |
-| `ed25519-security/` | Operator pubkey + weight registry, consensus threshold | `add_signer`, `set_threshold`, `get_signer_weight_at(...)`, … (vendored from [warpdrive-contracts](../warpdrive-contracts) verbatim) |
-| `ed25519-verification/` | Stellar-native quorum signature checker | `try_verify(envelope, signatures, signers, reference_block)` (vendored from `warpdrive-contracts`) |
+| `ed25519-security/` | Operator pubkey + weight registry, consensus threshold | `add_signer`, `set_threshold`, `get_signer_weight_at(...)`, ... (vendored verbatim from [warp-driver/warpdrive-contracts](https://github.com/warp-driver/warpdrive-contracts)) |
+| `ed25519-verification/` | Stellar-native quorum signature checker | `try_verify(envelope, signatures, signers, reference_block)` (vendored from the same warpdrive-contracts repo) |
 
 All four contracts compile with `soroban-sdk = 26` and
 `warpdrive-shared = 0.2.4`. They are standalone Cargo packages (no
 `[workspace]` parent) so `[profile.release].overflow-checks = true` actually
-applies — overflow-checks at the workspace root would NOT propagate to a
+applies - overflow-checks at the workspace root would NOT propagate to a
 contract crate.
 
 ### WASI 0.2 components (`components/`)
@@ -105,7 +105,7 @@ contract crate.
 | Path | Role |
 |---|---|
 | `circuit/` | Event accumulator + payload emitter. Subscribes to `("swap", *)` on the Phoenix pool; uses `wasi:keyvalue/atomics` CAS (`state.rs`) to merge the 8 concurrently-fired events of one swap into a single `SwapState` keyed by `tx_hash:op_index`; emits XDR `HodlersPayload` once `{sender, sell_token, buy_token, offer_amount or return_amount}` is filled. `finalized: bool` tombstone gives exactly-once semantics. |
-| `aggregator/` | Trivial submitter — reads `chain` + `service_handler` from its service.json config and emits one `Stellar SubmitAction` per aggregation. Decoupled from any warpdrive workspace crates so the repo builds standalone. |
+| `aggregator/` | Trivial submitter - reads `chain` + `service_handler` from its service.json config and emits one `Stellar SubmitAction` per aggregation. Decoupled from any warpdrive workspace crates so the repo builds standalone. |
 
 Both components are built via `cargo-component` to `wasm32-wasip1` (~150 KB
 total combined release size).
@@ -158,7 +158,6 @@ hodlers-app/
 ├── Taskfile.yml                       # build / deploy / runtime task surface
 ├── warpdrive.toml                     # node config (chains, p2p, gateway)
 ├── rust-toolchain.toml                # 1.95 + wasm32-wasip1 + wasm32v1-none
-├── CLAUDE.md                          # contributor notes (decisions, gotchas)
 ├── DEPLOY.md                          # deploy guide (single-op + multi-op)
 └── LICENSE                            # GPL-3.0
 ```
@@ -209,10 +208,9 @@ Full step-by-step (with prerequisites, multi-op setup, troubleshooting) is in
   at Phoenix's swap rate; a long-running production deployment would want a
   janitor task.
 - `dev_endpoints_enabled` is on in the demo's `warpdrive.toml` for ease of
-  debugging — production deployments should turn it off and add bearer auth
+  debugging - production deployments should turn it off and add bearer auth
   before exposing the node's `:8000` HTTP surface publicly.
-- No CI yet; tests are run manually.
 
 ## License
 
-GPL-3.0 — see [`LICENSE`](./LICENSE).
+GPL-3.0 - see [`LICENSE`](./LICENSE).
