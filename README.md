@@ -1,5 +1,9 @@
 # hodlers-app
 
+<p align="center">
+  <img src="assets/demo.gif" alt="Demo" width="720">
+</p>
+
 A verifiable, on-chain points ledger for Phoenix XLM-USDC traders, computed by
 a quorum of off-chain WarpDrive operators and settled to Stellar.
 
