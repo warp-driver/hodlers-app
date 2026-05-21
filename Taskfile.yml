@@ -26,6 +26,10 @@ version: '3'
 #   WORKFLOW_ID                     Service workflow id. Default: swap.
 #   SIGNER_WEIGHT                   Operator weight on the security contract. Default: 100.
 #   THRESHOLD_NUM/DEN               Consensus threshold fraction. Default: 1/1.
+#   PINATA_JWT                      Pinata JWT for `task pin-service` (multi-operator deploys
+#                                   pin service.json to public IPFS so all nodes can fetch via
+#                                   project_root.service_uri()). Generate at
+#                                   https://app.pinata.cloud > API Keys.
 #
 # Artefacts produced under ./out/ (gitignored):
 #
@@ -36,6 +40,7 @@ version: '3'
 #   out/circuit.digest     Content-address digest of the uploaded circuit component.
 #   out/aggregator.digest  Content-address digest of the uploaded aggregator component.
 #   out/service.hash       Hash returned by POST /dev/services after registering service.json.
+#   out/service.cid        IPFS CID returned by `task pin-service` (multi-operator deploys).
 #   out/signer.json        Raw SignerResponse from POST /services/signer.
 
 vars:
@@ -63,6 +68,11 @@ tasks:
     desc: Build hodlers-circuit as a WASI 0.2 component.
     cmds:
       - cargo component build --release --manifest-path components/circuit/Cargo.toml
+
+  build-aggregator:
+    desc: Build hodlers-aggregator as a WASI 0.2 component.
+    cmds:
+      - cargo component build --release --manifest-path components/aggregator/Cargo.toml
 
   test-circuit:
     desc: Run hodlers-circuit unit tests.
@@ -145,6 +155,89 @@ tasks:
         tmp=$(mktemp)
         jq '. + {signature_kind: {algorithm: "ed25519", prefix: "sep53"}}' \
             {{.SERVICE_FILE}} > "$tmp" && mv "$tmp" {{.SERVICE_FILE}}
+
+  register-manager:
+    desc: |
+      Tell the local warpdrive node to start watching the on-chain
+      project_root from out/deploy.json. The node fetches the current
+      service spec from project_root.service_uri() (typically the IPFS
+      CID set via `task publish-service`), pulls it from the configured
+      ipfs_gateway, and registers it in its dispatcher. Run once per
+      operator after `task run-node`.
+    cmds:
+      - |
+        set -euo pipefail
+        PROJECT_ROOT=$(jq -r .contracts.project_root out/deploy.json)
+        BODY=$(jq -nc --arg chain "{{.MANAGER_CHAIN}}" --arg addr "$PROJECT_ROOT" \
+            '{service_manager: {stellar: {chain: $chain, address: $addr}}}')
+        curl -sSf -X POST http://127.0.0.1:8000/services \
+            -H "Content-Type: application/json" \
+            --data "$BODY" \
+            -o /dev/null
+        echo "watching project_root $PROJECT_ROOT on {{.MANAGER_CHAIN}}"
+
+  set-service-spec:
+    desc: |
+      Point the on-chain project_root at a service spec URL. Requires
+      SERVICE_URI env var (typically `ipfs://$(cat out/service.cid)` from
+      `task pin-service`). All operator nodes poll project_root and will
+      auto-fetch the spec via their configured `[warpdrive] ipfs_gateway`.
+    cmds:
+      - |
+        set -euo pipefail
+        : "${DEPLOYER_SECRET:?DEPLOYER_SECRET is required}"
+        : "${DEPLOYER_ADDRESS:?DEPLOYER_ADDRESS is required}"
+        : "${SERVICE_URI:?SERVICE_URI is required}"
+        docker run --rm \
+          --pull=always \
+          --user "$(id -u):$(id -g)" \
+          -e HOME=/tmp \
+          -e RPC_URL="{{.RPC_URL}}" \
+          -e NETWORK_PASSPHRASE="{{.NETWORK_PASSPHRASE}}" \
+          -e DEPLOYER_SECRET="$DEPLOYER_SECRET" \
+          -e DEPLOYER_ADDRESS="$DEPLOYER_ADDRESS" \
+          -v "$PWD/out:/out" \
+          {{.MIDDLEWARE_IMAGE}} \
+          /warpdrive/cli.sh set-project-spec-repo \
+            --repo "$SERVICE_URI" \
+            --deploy-file /out/deploy.json
+
+  pin-service:
+    desc: |
+      Pin service/service.json to Pinata and write the resulting CID to
+      out/service.cid. Requires PINATA_JWT env var (get one from
+      https://app.pinata.cloud > API Keys > New key with the
+      pinFileToIPFS permission). Use after `task build-service`.
+    cmds:
+      - mkdir -p out
+      - |
+        set -euo pipefail
+        : "${PINATA_JWT:?PINATA_JWT is required}"
+        CID=$(curl -sSf -X POST https://api.pinata.cloud/pinning/pinFileToIPFS \
+            -H "Authorization: Bearer $PINATA_JWT" \
+            -F "file=@{{.SERVICE_FILE}}" \
+            -F 'pinataMetadata={"name":"hodlers-service.json"}' \
+            | jq -r .IpfsHash)
+        test -n "$CID" && test "$CID" != "null" \
+            || { echo "no CID returned from Pinata"; exit 1; }
+        echo "$CID" > out/service.cid
+        echo "service pinned: ipfs://$CID"
+        echo "(public gateway: https://gateway.pinata.cloud/ipfs/$CID )"
+
+  publish-service:
+    desc: |
+      Multi-operator one-shot: pin service.json to Pinata, then point the
+      on-chain project_root at the resulting URI. All warpdrive nodes
+      polling project_root.service_uri() will pick the new spec up on
+      their next chain query. Requires PINATA_JWT + DEPLOYER_SECRET +
+      DEPLOYER_ADDRESS.
+    cmds:
+      - task: pin-service
+      - |
+        set -euo pipefail
+        SERVICE_URI=ipfs://$(cat out/service.cid)
+        echo "registering $SERVICE_URI on project_root"
+        SERVICE_URI="$SERVICE_URI" task set-service-spec
 
   upload-component:
     desc: Upload the circuit wasm to the local warpdrive node; writes digest to out/circuit.digest.
@@ -256,13 +349,42 @@ tasks:
       - mkdir -p out
       - |
         set -euo pipefail
-        MANAGER=$(jq -c '{service_manager: .manager}' {{.SERVICE_FILE}})
+        PROJECT_ROOT=$(jq -r .contracts.project_root out/deploy.json)
+        BODY=$(jq -nc --arg chain "{{.MANAGER_CHAIN}}" --arg addr "$PROJECT_ROOT" \
+            '{service_manager: {stellar: {chain: $chain, address: $addr}}}')
         curl -sSf -X POST http://127.0.0.1:8000/services/signer \
             -H "Content-Type: application/json" \
-            --data "$MANAGER" > out/signer.json
+            --data "$BODY" > out/signer.json
         jq -r .ed25519.ed25519_pubkey out/signer.json > out/signer.pubkey
         test -s out/signer.pubkey || { echo "no pubkey in signer response"; cat out/signer.json; exit 1; }
         echo "operator pubkey: $(cat out/signer.pubkey)"
+
+  set-threshold:
+    desc: |
+      Update the consensus threshold on the ed25519 security contract.
+      Defaults to {{.THRESHOLD_NUM}}/{{.THRESHOLD_DEN}}; override with env
+      vars, e.g. `THRESHOLD_NUM=2 THRESHOLD_DEN=3 task set-threshold` for
+      2-of-3 quorum across multiple operators.
+    cmds:
+      - |
+        set -euo pipefail
+        : "${DEPLOYER_SECRET:?DEPLOYER_SECRET is required}"
+        : "${DEPLOYER_ADDRESS:?DEPLOYER_ADDRESS is required}"
+        docker run --rm \
+          --pull=always \
+          --user "$(id -u):$(id -g)" \
+          -e HOME=/tmp \
+          -e RPC_URL="{{.RPC_URL}}" \
+          -e NETWORK_PASSPHRASE="{{.NETWORK_PASSPHRASE}}" \
+          -e DEPLOYER_SECRET="$DEPLOYER_SECRET" \
+          -e DEPLOYER_ADDRESS="$DEPLOYER_ADDRESS" \
+          -v "$PWD/out:/out" \
+          {{.MIDDLEWARE_IMAGE}} \
+          /warpdrive/cli.sh set-threshold \
+            --scheme ed25519 \
+            --numerator {{.THRESHOLD_NUM}} \
+            --denominator {{.THRESHOLD_DEN}} \
+            --deploy-file /out/deploy.json
 
   register-signer:
     desc: |

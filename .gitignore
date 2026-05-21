@@ -11,4 +11,6 @@ test_snapshots/
 # Local secrets / per-deploy contract addresses.
 .env
 .env.local
-out/
+
+# Per-deploy artefacts (contract IDs, uploaded URIs, friendbot key).
+/out/
