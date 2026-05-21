@@ -22,7 +22,7 @@ operator or off-chain indexer.
   circuit watches a real Phoenix XLM-USDC pool and reacts to every swap.
 - **A WASI 0.2 circuit produces quorum-attested output that a Soroban contract
   can verify on-chain.** The handler uses the standard
-  `Ed25519VerificationInterface` from `warpdrive-shared` - no bespoke crypto
+  `Ed25519VerificationInterface` from [`warpdrive-shared`](https://github.com/warp-driver/warpdrive-contracts/tree/main/packages/shared) - no bespoke crypto
   in the demo path.
 - **The whole flow is open and uncoordinated.** Every operator independently
   watches mainnet, aggregates signatures over libp2p, and any of them may
@@ -95,7 +95,7 @@ WarpDrive aggregator  (per-operator; ed25519 / SEP-53 quorum over libp2p)
 | `ed25519-verification/` | Stellar-native quorum signature checker | `try_verify(envelope, signatures, signers, reference_block)` (vendored from the same warpdrive-contracts repo) |
 
 All four contracts compile with `soroban-sdk = 26` and
-`warpdrive-shared = 0.2.4`. They are standalone Cargo packages (no
+[`warpdrive-shared`](https://github.com/warp-driver/warpdrive-contracts/tree/main/packages/shared) `= 0.2.4`. They are standalone Cargo packages (no
 `[workspace]` parent) so `[profile.release].overflow-checks = true` actually
 applies - overflow-checks at the workspace root would NOT propagate to a
 contract crate.
@@ -113,7 +113,7 @@ total combined release size).
 ## Why these choices
 
 - **ed25519 / SEP-53 instead of secp256k1 / EIP-191.** Stellar-native. Lets us
-  reuse the standard `Ed25519VerificationInterface` from `warpdrive-shared`
+  reuse the standard `Ed25519VerificationInterface` from [`warpdrive-shared`](https://github.com/warp-driver/warpdrive-contracts/tree/main/packages/shared)
   and the Stellar-handler envelope shape (`XlmEnvelope` carrying `event_id`,
   `ordering`, `payload` as raw XDR), so the demo demonstrates the canonical
   WarpDrive-on-Stellar path.

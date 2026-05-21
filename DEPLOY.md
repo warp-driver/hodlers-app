@@ -21,14 +21,14 @@ Linux with a recent glibc. The following tools must be on `PATH`:
 | Tool                    | Why                                                                                              |
 | ----------------------- | ------------------------------------------------------------------------------------------------ |
 | `curl`, `jq`, `python3` | Shell / build / IPC                                                                              |
-| `docker`                | Runs the `warpdrive-stellar-middleware` container                                                |
+| `docker`                | Runs the [`warpdrive-stellar-middleware`](https://github.com/warp-driver/warpdrive-stellar-middleware) container                                       |
 | Rust 1.95 (via rustup)  | Pinned by `rust-toolchain.toml`; required for component + contract builds                        |
 | `task` (go-task)        | Runs `Taskfile.yml` targets                                                                      |
 | `wkg`                   | Fetches the WIT deps for the WASI components                                                     |
 | `cargo-component`       | Builds WASI 0.2 components (`circuit`, `aggregator`)                                             |
 | `stellar` CLI           | Soroban contract deploys, key management, RPC simulations                                        |
-| `warpdrive`             | The operator runtime; build from `https://github.com/warp-driver/warpdrive` (see Upstream patches) |
-| `warpdrive-cli`         | Service registration, signer queries, component uploads; built from the same warpdrive repo      |
+| `warpdrive`             | The operator runtime, built from [`warp-driver/warpdrive/packages/warpdrive`](https://github.com/warp-driver/warpdrive/tree/main/packages/warpdrive) (see Upstream patches)                       |
+| `warpdrive-cli`         | Service registration, signer queries, component uploads, built from [`warp-driver/warpdrive/packages/cli`](https://github.com/warp-driver/warpdrive/tree/main/packages/cli)                       |
 | Pinata account          | IPFS-pinning of `service.json` (multi-operator only); sign up at `https://app.pinata.cloud`      |
 
 Rust setup once the toolchain is installed:
@@ -52,17 +52,18 @@ EOF
 
 ### Upstream warpdrive patches
 
-The reference `warpdrive` node binary needs three small patches to work
-with this demo:
+The reference [`warpdrive`](https://github.com/warp-driver/warpdrive) node
+binary needs three small patches to work with this demo:
 
-| Patch                                               | Where (in the warpdrive repo)                                         | Why                                                                                                                                       |
-| --------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Real CAS in `wasi:keyvalue/atomics::swap`           | `packages/engine/src/backend/wasi_keyvalue/atomics.rs`                | Upstream `swap` is a stub that just stores the value (last-writer-wins). The circuit's accumulator depends on real CAS semantics.         |
-| Real Stellar chain health check                     | `packages/utils/src/health.rs` (`check_stellar_chain_health_query`)   | Upstream returns `Err(NotImplemented)` unconditionally so Stellar chains never report healthy.                                            |
-| Verbose receive-validation logging (optional)       | `packages/warpdrive/src/subsystems/aggregator/validate.rs` (Ed25519)  | Logs the exact args sent to `check_one` so signature mismatches are debuggable.                                                           |
+| Patch                                               | Where (in [`warp-driver/warpdrive`](https://github.com/warp-driver/warpdrive))                                                                                                          | Why                                                                                                                                       |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Real CAS in `wasi:keyvalue/atomics::swap`           | [`packages/engine/src/backend/wasi_keyvalue/atomics.rs`](https://github.com/warp-driver/warpdrive/blob/main/packages/engine/src/backend/wasi_keyvalue/atomics.rs)                       | Upstream `swap` is a stub that just stores the value (last-writer-wins). The circuit's accumulator depends on real CAS semantics.         |
+| Real Stellar chain health check                     | [`packages/utils/src/health.rs`](https://github.com/warp-driver/warpdrive/blob/main/packages/utils/src/health.rs) (`check_stellar_chain_health_query`)                                 | Upstream returns `Err(NotImplemented)` unconditionally so Stellar chains never report healthy.                                            |
+| Verbose receive-validation logging (optional)       | [`packages/warpdrive/src/subsystems/aggregator/validate.rs`](https://github.com/warp-driver/warpdrive/blob/main/packages/warpdrive/src/subsystems/aggregator/validate.rs) (Ed25519 arm) | Logs the exact args sent to `check_one` so signature mismatches are debuggable.                                                           |
 
-Maintain a fork of warpdrive with these applied, or apply to a fresh
-upstream tree before building the node binary.
+Maintain a fork of [`warp-driver/warpdrive`](https://github.com/warp-driver/warpdrive)
+with these applied, or apply to a fresh upstream tree before building the
+node binary.
 
 ### Environment variables
 
