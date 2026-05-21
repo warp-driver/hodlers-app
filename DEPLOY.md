@@ -27,7 +27,7 @@ Linux with a recent glibc. The following tools must be on `PATH`:
 | `wkg`                   | Fetches the WIT deps for the WASI components                                                     |
 | `cargo-component`       | Builds WASI 0.2 components (`circuit`, `aggregator`)                                             |
 | `stellar` CLI           | Soroban contract deploys, key management, RPC simulations                                        |
-| `warpdrive`             | The operator runtime, built from [`warp-driver/warpdrive/packages/warpdrive`](https://github.com/warp-driver/warpdrive/tree/main/packages/warpdrive) (see Upstream patches)                       |
+| `warpdrive`             | The operator runtime, built from [`warp-driver/warpdrive/packages/warpdrive`](https://github.com/warp-driver/warpdrive/tree/main/packages/warpdrive)                                              |
 | `warpdrive-cli`         | Service registration, signer queries, component uploads, built from [`warp-driver/warpdrive/packages/cli`](https://github.com/warp-driver/warpdrive/tree/main/packages/cli)                       |
 | Pinata account          | IPFS-pinning of `service.json` (multi-operator only); sign up at `https://app.pinata.cloud`      |
 
@@ -49,21 +49,6 @@ default_registry = "wa.dev"
 warpdrive = "warg.wa.dev"
 EOF
 ```
-
-### Upstream warpdrive patches
-
-The reference [`warpdrive`](https://github.com/warp-driver/warpdrive) node
-binary needs three small patches to work with this demo:
-
-| Patch                                               | Where (in [`warp-driver/warpdrive`](https://github.com/warp-driver/warpdrive))                                                                                                          | Why                                                                                                                                       |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Real CAS in `wasi:keyvalue/atomics::swap`           | [`packages/engine/src/backend/wasi_keyvalue/atomics.rs`](https://github.com/warp-driver/warpdrive/blob/main/packages/engine/src/backend/wasi_keyvalue/atomics.rs)                       | Upstream `swap` is a stub that just stores the value (last-writer-wins). The circuit's accumulator depends on real CAS semantics.         |
-| Real Stellar chain health check                     | [`packages/utils/src/health.rs`](https://github.com/warp-driver/warpdrive/blob/main/packages/utils/src/health.rs) (`check_stellar_chain_health_query`)                                 | Upstream returns `Err(NotImplemented)` unconditionally so Stellar chains never report healthy.                                            |
-| Verbose receive-validation logging (optional)       | [`packages/warpdrive/src/subsystems/aggregator/validate.rs`](https://github.com/warp-driver/warpdrive/blob/main/packages/warpdrive/src/subsystems/aggregator/validate.rs) (Ed25519 arm) | Logs the exact args sent to `check_one` so signature mismatches are debuggable.                                                           |
-
-Maintain a fork of [`warp-driver/warpdrive`](https://github.com/warp-driver/warpdrive)
-with these applied, or apply to a fresh upstream tree before building the
-node binary.
 
 ### Environment variables
 
@@ -413,10 +398,8 @@ You should see the trader's address with their new points total.
 | Symptom                                                                                  | Cause                                                                       | Fix                                                                                                                                                            |
 | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `task fetch-wit` -> `package warpdrive:vectr was not found in component registry`        | `wkg` does not know how to resolve the `warpdrive` namespace                | Write `~/.config/wasm-pkg/config.toml` per Prerequisites.                                                                                                      |
-| Node logs `[stellar:pubnet] NotImplemented` health check                                 | warpdrive built from an unpatched tree                                      | Apply the `health.rs` patch from Upstream warpdrive patches; rebuild + reinstall the node.                                                                     |
 | `task register-signer` errors with `connection refused on 127.0.0.1:8000`                | The local node is not running and `SIGNER_PUBKEY` was not passed            | Either start `task run-node` first (the task auto-fetches the local signer) or pass `SIGNER_PUBKEY=<hex>` explicitly (multi-op flow).                          |
 | Operator A cannot reach operator B `:8000` (Connection refused)                          | Operator B's warpdrive bound to `127.0.0.1:8000`                            | Add `host = "0.0.0.0"` under `[warpdrive]` in operator B's `warpdrive.toml`; restart the node.                                                                 |
 | Operator A cannot reach operator B `:8000` (timeout)                                     | Cloud firewall blocking                                                     | Allow inbound TCP 8000 from operator A's IP on operator B's firewall (or keep `:8000` internal and front it with a proxy).                                     |
 | Node logs `Failed to restore service ... REPLACE_ME`                                     | Stale persistent registry from a previous deploy                            | `rm -rf out/node-data` then restart the node.                                                                                                                  |
-| Component executes but `produced no result` for all 8 events; `/dev/kv` shows only 2-3 of 5 relevant fields populated | Running an unpatched warpdrive (no real CAS in `wasi:keyvalue/atomics::swap`) | Apply the `atomics.rs` patch from Upstream warpdrive patches; rebuild + reinstall the node.                                                                    |
 | `verify_xlm` reverts with `EventAlreadySeen`                                             | Expected when a peer already submitted                                      | Not an error; the handler's dedup is doing its job.                                                                                                            |
